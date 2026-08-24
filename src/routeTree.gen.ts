@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as CategoriesRouteImport } from './routes/categories'
 import { Route as NearMeRouteImport } from './routes/near-me'
 import { Route as SavedRouteImport } from './routes/saved'
+import { Route as SearchRouteImport } from './routes/search'
+import { Route as DealDealIdRouteImport } from './routes/deal.$dealId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -34,18 +36,32 @@ const SavedRoute = SavedRouteImport.update({
   path: '/saved',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DealDealIdRoute = DealDealIdRouteImport.update({
+  id: '/deal/$dealId',
+  path: '/deal/$dealId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/categories': typeof CategoriesRoute
   '/near-me': typeof NearMeRoute
   '/saved': typeof SavedRoute
+  '/search': typeof SearchRoute
+  '/deal/$dealId': typeof DealDealIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/categories': typeof CategoriesRoute
   '/near-me': typeof NearMeRoute
   '/saved': typeof SavedRoute
+  '/search': typeof SearchRoute
+  '/deal/$dealId': typeof DealDealIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -53,13 +69,23 @@ export interface FileRoutesById {
   '/categories': typeof CategoriesRoute
   '/near-me': typeof NearMeRoute
   '/saved': typeof SavedRoute
+  '/search': typeof SearchRoute
+  '/deal/$dealId': typeof DealDealIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/categories' | '/near-me' | '/saved'
+  fullPaths:
+    '/' | '/categories' | '/near-me' | '/saved' | '/search' | '/deal/$dealId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/categories' | '/near-me' | '/saved'
-  id: '__root__' | '/' | '/categories' | '/near-me' | '/saved'
+  to: '/' | '/categories' | '/near-me' | '/saved' | '/search' | '/deal/$dealId'
+  id:
+    | '__root__'
+    | '/'
+    | '/categories'
+    | '/near-me'
+    | '/saved'
+    | '/search'
+    | '/deal/$dealId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -67,6 +93,8 @@ export interface RootRouteChildren {
   CategoriesRoute: typeof CategoriesRoute
   NearMeRoute: typeof NearMeRoute
   SavedRoute: typeof SavedRoute
+  SearchRoute: typeof SearchRoute
+  DealDealIdRoute: typeof DealDealIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -99,6 +127,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SavedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deal/$dealId': {
+      id: '/deal/$dealId'
+      path: '/deal/$dealId'
+      fullPath: '/deal/$dealId'
+      preLoaderRoute: typeof DealDealIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -107,6 +149,8 @@ const rootRouteChildren: RootRouteChildren = {
   CategoriesRoute: CategoriesRoute,
   NearMeRoute: NearMeRoute,
   SavedRoute: SavedRoute,
+  SearchRoute: SearchRoute,
+  DealDealIdRoute: DealDealIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
