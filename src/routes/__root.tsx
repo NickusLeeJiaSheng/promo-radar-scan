@@ -127,8 +127,18 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <div className="flex min-h-screen flex-col">
+        <SiteHeader />
+        <main className="flex-1 pb-20 md:pb-0">
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+        </main>
+        <footer className="hidden border-t border-border py-8 text-center text-sm text-muted-foreground md:block">
+          DealHub · Promotions collected from public Telegram channels across Singapore.
+        </footer>
+        <BottomNav />
+      </div>
     </QueryClientProvider>
   );
 }
+
