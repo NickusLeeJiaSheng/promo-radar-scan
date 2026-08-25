@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Heart } from "lucide-react";
 
 import { DealCard } from "@/components/DealCard";
-import { deals } from "@/data/deals";
+import { useDeals } from "@/hooks/useDeals";
 import { useSavedDeals } from "@/hooks/useSavedDeals";
 
 export const Route = createFileRoute("/saved")({
@@ -22,7 +22,8 @@ export const Route = createFileRoute("/saved")({
 
 function Saved() {
   const { saved, isSaved, toggle } = useSavedDeals();
-  const items = deals.filter((d) => saved.includes(d.id));
+  const { data: allDeals = [] } = useDeals();
+  const items = allDeals.filter((d) => saved.includes(d.id));
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">

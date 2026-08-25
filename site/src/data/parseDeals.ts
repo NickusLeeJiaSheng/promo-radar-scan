@@ -1,36 +1,6 @@
+import { fetchDealsFromDb } from "@/api/deals";
+import type { DbDeal } from "@/api/deals.types";
 import { type CategoryId, type Deal } from "./deals";
-
-// ── Raw shape from processed.jsonl ────────────────────────────────────────────
-
-interface RawPrediction {
-  merchant: string;
-  category: string;
-  offer: string;
-  price: string | null;
-  original_price: string | null;
-  discount: string | null;
-  valid_from: string | null;
-  valid_to: string | null;
-  time: string | null;
-  locations: string[];
-  redemption_method: string | null;
-  restrictions: string[];
-  promo_code: string | null;
-  more_info: string | null;
-  // Added by geocode.py
-  lat: number | null;
-  lng: number | null;
-}
-
-interface RawRecord {
-  channel: string;
-  channel_title: string;
-  message_id: number;
-  posted_at: string;
-  posted_date: string;
-  input: string;
-  prediction: RawPrediction;
-}
 
 // ── Category normalisation ─────────────────────────────────────────────────────
 
@@ -57,17 +27,16 @@ function normaliseCategory(raw: string): CategoryId {
 
 // ── Offer label ────────────────────────────────────────────────────────────────
 
-function buildOffer(p: RawPrediction): string {
-  if (p.discount) return p.discount;
-  if (p.price) return p.price;
+function buildOffer(row: DbDeal): string {
+  if (row.discount) return row.discount;
+  if (row.price) return row.price;
   return "DEAL";
 }
 
 // ── Title ─────────────────────────────────────────────────────────────────────
 
-function buildTitle(p: RawPrediction): string {
-  // Use first sentence / up to 70 chars of the offer field as the card title
-  const raw = p.offer ?? "";
+function buildTitle(row: DbDeal): string {
+  const raw = row.offer ?? "";
   const sentence = (raw.split(/[.!?]/)[0] ?? raw).trim();
   return sentence.length > 72 ? sentence.slice(0, 69) + "…" : sentence;
 }
@@ -108,9 +77,8 @@ function scrapedAgo(postedAt: string): string {
 // ── Map position (deterministic pseudo-random from message_id) ────────────────
 
 function mapPos(id: number): { x: number; y: number } {
-  // Simple hash to spread pins across the canvas
-  const x = ((id * 137 + 29) % 72) + 10; // 10–82
-  const y = ((id * 97 + 41) % 62) + 15; // 15–77
+  const x = ((id * 137 + 29) % 72) + 10;
+  const y = ((id * 97 + 41) % 62) + 15;
   return { x, y };
 }
 
@@ -118,53 +86,63 @@ function mapPos(id: number): { x: number; y: number } {
 
 function buildMoreInfoUrl(raw: string | null): string | undefined {
   if (!raw) return undefined;
-  // Strip any markdown link junk like "bit.ly/foo](http://bit.ly/foo)"
   const clean = raw.replace(/\]\(.*?\)/, "").trim();
   if (!clean) return undefined;
-  // If it already has a protocol, use it as-is
   if (/^https?:\/\//i.test(clean)) return clean;
   return `https://${clean}`;
 }
 
-export function rawToDeal(record: RawRecord): Deal {
-  const p = record.prediction;
-  const location = p.locations.length > 0 ? p.locations[0] : "Singapore";
-  const locationStr: string = location ?? "Singapore";
+// ── DB row → Deal ─────────────────────────────────────────────────────────────
+
+export function dbRowToDeal(row: DbDeal): Deal {
+  // locations is [{name, lat, lng}] — use the first entry for the primary location string
+  const firstLoc = row.locations?.[0];
+  const locationStr = firstLoc?.name ?? "Singapore";
 
   const terms = [
-    ...(p.restrictions ?? []),
-    p.redemption_method ? `Redeem via: ${p.redemption_method}` : null,
-    p.promo_code ? `Code: ${p.promo_code}` : null,
+    ...(row.restrictions ?? []),
+    row.redemption_method ? `Redeem via: ${row.redemption_method}` : null,
+    row.promo_code ? `Code: ${row.promo_code}` : null,
   ]
     .filter(Boolean)
     .join(". ");
 
   const deal: Deal = {
-    id: `${record.channel}-${record.message_id}`,
-    merchant: p.merchant,
-    title: buildTitle(p),
-    description: p.offer,
+    id: `${row.channel}-${row.message_id}`,
+    merchant: row.merchant,
+    title: buildTitle(row),
+    description: row.offer,
     terms: terms || "T&Cs apply.",
-    offer: buildOffer(p),
-    category: normaliseCategory(p.category),
+    offer: buildOffer(row),
+    category: normaliseCategory(row.category),
     location: locationStr,
     address: locationStr,
     distanceKm: 0,
-    expiry: formatExpiry(p.valid_to),
-    expiresSoon: isExpiresSoon(p.valid_to),
-    scrapedAgo: scrapedAgo(record.posted_at),
-    channel: `@${record.channel}`,
-    openingHours: p.time ?? "",
+    expiry: formatExpiry(row.valid_to),
+    expiresSoon: isExpiresSoon(row.valid_to),
+    scrapedAgo: scrapedAgo(row.posted_at),
+    channel: `@${row.channel}`,
+    openingHours: row.time ?? "",
     trending: false,
-    map: mapPos(record.message_id),
-    originalPost: record.input.replace(/\*\*/g, "").replace(/@\w+/g, "").trim(),
+    map: mapPos(row.message_id),
+    originalPost: (row.raw_input ?? "").replace(/\*\*/g, "").replace(/@\w+/g, "").trim(),
   };
 
-  const url = buildMoreInfoUrl(p.more_info);
+  const url = buildMoreInfoUrl(row.more_info);
   if (url) deal.moreInfoUrl = url;
 
-  if (p.lat != null) deal.lat = p.lat;
-  if (p.lng != null) deal.lng = p.lng;
+  // Use the first geocoded location's coords for distance/map calculations
+  // All locations with coords are stored in deal.locations for the map
+  const geocodedLocs = (row.locations ?? []).filter(
+    (l) => l.lat != null && l.lng != null,
+  );
+  if (geocodedLocs.length > 0) {
+    deal.lat = geocodedLocs[0].lat!;
+    deal.lng = geocodedLocs[0].lng!;
+  }
+
+  // Attach all locations for multi-pin map rendering
+  deal.allLocations = row.locations ?? [];
 
   return deal;
 }
@@ -172,19 +150,14 @@ export function rawToDeal(record: RawRecord): Deal {
 // ── Fetch + parse ─────────────────────────────────────────────────────────────
 
 export async function fetchDeals(): Promise<Deal[]> {
-  const res = await fetch("/processed_geo.jsonl");
-  if (!res.ok) throw new Error(`Failed to load deals: ${res.status}`);
-
-  const text = await res.text();
-  const lines = text.split("\n").filter((l) => l.trim());
+  const rows = await fetchDealsFromDb();
 
   const deals: Deal[] = [];
   const seen = new Set<string>();
 
-  for (const line of lines) {
+  for (const row of rows) {
     try {
-      const record = JSON.parse(line) as RawRecord;
-      const deal = rawToDeal(record);
+      const deal = dbRowToDeal(row);
 
       // De-duplicate by merchant + offer in case channels cross-post the same deal
       const key = `${deal.merchant.toLowerCase()}::${deal.offer.toLowerCase()}`;
@@ -193,12 +166,10 @@ export async function fetchDeals(): Promise<Deal[]> {
 
       deals.push(deal);
     } catch {
-      // Skip malformed lines
+      // Skip malformed rows
     }
   }
 
-  // Sort newest-first
-  return deals.sort(
-    (a, b) => new Date(b.scrapedAgo).getTime() - new Date(a.scrapedAgo).getTime(),
-  );
+  // Already sorted DESC by posted_at from the DB query
+  return deals;
 }

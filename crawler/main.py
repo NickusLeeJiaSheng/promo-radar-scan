@@ -1,5 +1,6 @@
 import os
 import json
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -10,6 +11,9 @@ from telethon import TelegramClient
 # Always load .env from the repo root (one level up from crawler/)
 HERE = Path(__file__).parent
 load_dotenv(HERE.parent / ".env")
+
+# Add db/ to path so we can import db helpers
+sys.path.insert(0, str(HERE.parent / "db"))
 
 API_ID = int(os.getenv("TELEGRAM_API_ID"))
 API_HASH = os.getenv("TELEGRAM_API_HASH")
@@ -71,6 +75,19 @@ def save_cutoff(dt: datetime):
 CUTOFF_DATE = load_cutoff()
 # Record the time this run started — saved after a successful scrape
 RUN_STARTED_AT = datetime.now(timezone.utc)
+
+# ---------------------------------------------------------------------------
+# Database connection (opened once, shared across all channel scrapes)
+# ---------------------------------------------------------------------------
+
+from db import create_tables, get_connection, upsert_raw_message  # noqa: E402
+
+try:
+    db_conn = get_connection()
+    create_tables(db_conn)
+except Exception as e:
+    print(f"Warning: could not connect to database — messages will only be saved to file. ({e})")
+    db_conn = None
 
 
 def load_channels():
@@ -184,6 +201,16 @@ async def main():
 
                 save_message(message_data)
 
+                # Also save to database if connection is available
+                if db_conn:
+                    try:
+                        with db_conn.cursor() as cur:
+                            upsert_raw_message(cur, message_data)
+                        db_conn.commit()
+                    except Exception as e:
+                        print(f"  DB error saving {channel_name} message {message.id}: {e}")
+                        db_conn.rollback()
+
                 print(
                     f"Saved {channel_name} "
                     f"message {message.id}"
@@ -197,3 +224,5 @@ with client:
     client.loop.run_until_complete(main())
     # Only update the cutoff after all channels have been scraped successfully
     save_cutoff(RUN_STARTED_AT)
+    if db_conn:
+        db_conn.close()

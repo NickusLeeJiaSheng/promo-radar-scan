@@ -4,15 +4,20 @@ import { useState } from "react";
 
 import { DealCard } from "@/components/DealCard";
 import { DealMap } from "@/components/DealMap";
-import { categoryMap, deals, getDeal } from "@/data/deals";
+import { categoryMap } from "@/data/deals";
+import { fetchDeals } from "@/data/parseDeals";
 import { useSavedDeals } from "@/hooks/useSavedDeals";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/deal/$dealId")({
-  loader: ({ params }) => {
-    const deal = getDeal(params.dealId);
+  loader: async ({ params }) => {
+    const deals = await fetchDeals();
+    const deal = deals.find((d) => d.id === params.dealId);
     if (!deal) throw notFound();
-    return { deal };
+    const related = deals
+      .filter((d) => d.category === deal.category && d.id !== deal.id)
+      .slice(0, 4);
+    return { deal, related };
   },
   head: ({ loaderData }) => {
     if (!loaderData) {
@@ -36,11 +41,10 @@ export const Route = createFileRoute("/deal/$dealId")({
 });
 
 function DealDetail() {
-  const { deal } = Route.useLoaderData();
+  const { deal, related } = Route.useLoaderData();
   const { isSaved, toggle } = useSavedDeals();
   const [selected, setSelected] = useState<string | null>(deal.id);
   const category = categoryMap[deal.category];
-  const related = deals.filter((d) => d.category === deal.category && d.id !== deal.id).slice(0, 4);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">

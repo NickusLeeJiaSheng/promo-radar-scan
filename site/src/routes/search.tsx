@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { DealCard } from "@/components/DealCard";
 import { SearchBar } from "@/components/SearchBar";
-import { categories, deals, matchesQuery } from "@/data/deals";
+import { categories, matchesQuery } from "@/data/deals";
+import { filterDeals, useDeals } from "@/hooks/useDeals";
 import { cn } from "@/lib/utils";
 
 const searchSchema = z.object({
@@ -57,8 +58,10 @@ function SearchPage() {
   const [sort, setSort] = useState<SortKey>("newest");
   const [maxDistance, setMaxDistance] = useState(20);
 
+  const { data: allDeals = [] } = useDeals();
+
   const results = useMemo(() => {
-    const list = deals
+    const list = allDeals
       .filter((d) => matchesQuery(d, q))
       .filter((d) => category === "all" || d.category === category)
       .filter((d) => d.distanceKm <= maxDistance);
@@ -69,7 +72,7 @@ function SearchPage() {
       if (sort === "expiry") return Number(!!b.expiresSoon) - Number(!!a.expiresSoon);
       return 0;
     });
-  }, [q, category, sort, maxDistance]);
+  }, [allDeals, q, category, sort, maxDistance]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">

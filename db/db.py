@@ -29,7 +29,19 @@ def get_connection():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
-CREATE_TABLE_SQL = """
+CREATE_TABLES_SQL = """
+CREATE TABLE IF NOT EXISTS raw_messages (
+    id            SERIAL PRIMARY KEY,
+    channel       TEXT,
+    channel_title TEXT,
+    message_id    INTEGER,
+    posted_at     TIMESTAMPTZ,
+    text          TEXT,
+    image_key     TEXT,
+    scraped_at    TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (channel, message_id)
+);
+
 CREATE TABLE IF NOT EXISTS deals (
     id                SERIAL PRIMARY KEY,
     channel           TEXT,
@@ -60,12 +72,41 @@ CREATE TABLE IF NOT EXISTS deals (
 """
 
 
-def create_table(conn):
-    """Create the deals table if it doesn't already exist."""
+def create_tables(conn):
+    """Create all tables if they don't already exist."""
     with conn.cursor() as cur:
-        cur.execute(CREATE_TABLE_SQL)
+        cur.execute(CREATE_TABLES_SQL)
     conn.commit()
-    print("Table 'deals' is ready.")
+    print("Tables 'raw_messages' and 'deals' are ready.")
+
+
+# Keep old name as an alias for load_to_db.py compatibility
+def create_table(conn):
+    create_tables(conn)
+
+
+UPSERT_RAW_MESSAGE_SQL = """
+INSERT INTO raw_messages (channel, channel_title, message_id, posted_at, text, image_key)
+VALUES (%(channel)s, %(channel_title)s, %(message_id)s, %(posted_at)s, %(text)s, %(image_key)s)
+ON CONFLICT (channel, message_id)
+DO UPDATE SET
+    channel_title = EXCLUDED.channel_title,
+    posted_at     = EXCLUDED.posted_at,
+    text          = EXCLUDED.text,
+    image_key     = EXCLUDED.image_key;
+"""
+
+
+def upsert_raw_message(cur, message_data: dict):
+    """Upsert a single raw scraped message."""
+    cur.execute(UPSERT_RAW_MESSAGE_SQL, {
+        "channel":       message_data.get("channel"),
+        "channel_title": message_data.get("channel_title"),
+        "message_id":    message_data.get("message_id"),
+        "posted_at":     message_data.get("posted_at"),
+        "text":          message_data.get("text"),
+        "image_key":     message_data.get("image_key"),
+    })
 
 
 UPSERT_SQL = """
