@@ -496,21 +496,9 @@ Quickly accessing the original promotion
 
 The final design should feel like a polished "deal discovery engine for Singapore", where the unique selling point is that promotions are automatically collected from Telegram and organised into a useful location-aware interface.
 
-This project was built with [Lovable](https://lovable.dev).
-
-**Live app**: https://promo-radar-scan.lovable.app
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/e281a63f-a125-43d8-8490-0510b853b97b).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
-
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
 ```sh
 git clone <this-repository-url>

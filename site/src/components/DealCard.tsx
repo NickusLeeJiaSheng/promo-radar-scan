@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, Clock, Heart, MapPin } from "lucide-react";
+import { ArrowRight, Clock, ExternalLink, Heart, MapPin } from "lucide-react";
 
 import { categoryMap, type Deal } from "@/data/deals";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,25 @@ type Props = {
 
 export function DealCard({ deal, className, saved, onToggleSave }: Props) {
   const category = categoryMap[deal.category];
+  const hasExternalLink = Boolean(deal.moreInfoUrl);
+
+  // The card is either a full external <a> or an internal router <Link>
+  const CardWrapper = hasExternalLink
+    ? ({ children, className: cls }: { children: React.ReactNode; className?: string }) => (
+        <a
+          href={deal.moreInfoUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+          className={cls}
+        >
+          {children}
+        </a>
+      )
+    : ({ children, className: cls }: { children: React.ReactNode; className?: string }) => (
+        <Link to="/deal/$dealId" params={{ dealId: deal.id }} className={cls}>
+          {children}
+        </Link>
+      );
 
   return (
     <article className={cn("deal-card group flex flex-col overflow-hidden", className)}>
@@ -38,7 +57,10 @@ export function DealCard({ deal, className, saved, onToggleSave }: Props) {
           <button
             type="button"
             aria-label={saved ? "Remove from saved" : "Save deal"}
-            onClick={() => onToggleSave(deal.id)}
+            onClick={(e) => {
+              e.preventDefault(); // prevent card navigation when clicking heart
+              onToggleSave(deal.id);
+            }}
             className="absolute right-3 top-3 grid size-8 place-items-center rounded-full border border-border bg-card/90 text-muted-foreground backdrop-blur transition-colors hover:text-primary"
           >
             <Heart className={cn("size-4", saved && "fill-primary text-primary")} />
@@ -57,20 +79,16 @@ export function DealCard({ deal, className, saved, onToggleSave }: Props) {
         </div>
 
         <h3 className="font-display text-lg font-bold leading-snug">
-          <Link
-            to="/deal/$dealId"
-            params={{ dealId: deal.id }}
-            className="after:absolute after:inset-0"
-          >
+          <CardWrapper className="after:absolute after:inset-0">
             {deal.title}
-          </Link>
+          </CardWrapper>
         </h3>
         <p className="line-clamp-2 text-sm text-muted-foreground">{deal.description}</p>
 
         <div className="mt-auto space-y-1.5 pt-2 text-sm">
           <p className="flex items-center gap-1.5 text-muted-foreground">
             <MapPin className="size-3.5 text-primary" />
-            {deal.location} · {deal.distanceKm} km
+            {deal.location}{deal.distanceKm > 0 ? ` · ${deal.distanceKm} km` : ""}
           </p>
           <p
             className={cn(
@@ -87,7 +105,10 @@ export function DealCard({ deal, className, saved, onToggleSave }: Props) {
           <span>Telegram · {deal.scrapedAgo}</span>
           <span className="inline-flex items-center gap-1 font-semibold text-foreground transition-colors group-hover:text-primary">
             View deal
-            <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+            {hasExternalLink
+              ? <ExternalLink className="size-3.5" />
+              : <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+            }
           </span>
         </div>
       </div>
@@ -95,13 +116,24 @@ export function DealCard({ deal, className, saved, onToggleSave }: Props) {
   );
 }
 
-export function DealRow({ deal }: { deal: Deal }) {
+export function DealRow({ deal, distanceKm }: { deal: Deal; distanceKm?: number }) {
+  const dist = distanceKm ?? deal.distanceKm;
+  const hasExternalLink = Boolean(deal.moreInfoUrl);
+
+  const RowWrapper = hasExternalLink
+    ? ({ children, className: cls }: { children: React.ReactNode; className?: string }) => (
+        <a href={deal.moreInfoUrl} target="_blank" rel="noreferrer noopener" className={cls}>
+          {children}
+        </a>
+      )
+    : ({ children, className: cls }: { children: React.ReactNode; className?: string }) => (
+        <Link to="/deal/$dealId" params={{ dealId: deal.id }} className={cls}>
+          {children}
+        </Link>
+      );
+
   return (
-    <Link
-      to="/deal/$dealId"
-      params={{ dealId: deal.id }}
-      className="deal-card flex items-center gap-4 p-3"
-    >
+    <RowWrapper className="deal-card flex items-center gap-4 p-3">
       <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-accent text-2xl">
         {deal.image ? (
           <img
@@ -122,12 +154,14 @@ export function DealRow({ deal }: { deal: Deal }) {
         </p>
         <p className="truncate font-display text-sm font-bold">{deal.title}</p>
         <p className="mt-0.5 truncate text-xs text-muted-foreground">
-          {deal.location} · {deal.distanceKm} km · Ends {deal.expiry}
+          {deal.location}
+          {dist > 0 ? ` · ${dist} km` : ""}
+          {deal.expiry !== "Ongoing" ? ` · Ends ${deal.expiry}` : ""}
         </p>
       </div>
       <span className="shrink-0 rounded-full bg-accent px-2.5 py-1 font-display text-xs font-bold text-accent-foreground">
         {deal.offer}
       </span>
-    </Link>
+    </RowWrapper>
   );
 }

@@ -57,6 +57,10 @@ export type Deal = {
   // Position on the stylised map, in percent
   map: { x: number; y: number };
   originalPost: string;
+  moreInfoUrl?: string;
+  // Real-world coordinates (present when geocoding succeeded)
+  lat?: number;
+  lng?: number;
 };
 
 export const deals: Deal[] = [
