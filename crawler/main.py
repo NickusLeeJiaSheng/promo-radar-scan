@@ -4,8 +4,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import boto3
 from dotenv import load_dotenv
+from supabase import create_client, Client
 from telethon import TelegramClient
 
 # Always load .env from the repo root (one level up from crawler/)
@@ -18,14 +18,43 @@ sys.path.insert(0, str(HERE.parent / "db"))
 API_ID = int(os.getenv("TELEGRAM_API_ID"))
 API_HASH = os.getenv("TELEGRAM_API_HASH")
 
-# AWS S3
-S3_BUCKET = os.getenv("S3_BUCKET")
-S3_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
+# ---------------------------------------------------------------------------
+# Supabase Storage
+# ---------------------------------------------------------------------------
 
-s3 = boto3.client(
-    "s3",
-    region_name=S3_REGION
-)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "deal-images")
+
+# Use service role key for storage writes — anon key is blocked by RLS
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+
+supabase: Client | None = None
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+elif SUPABASE_URL and os.getenv("SUPABASE_KEY"):
+    print("Warning: SUPABASE_SERVICE_KEY not set — falling back to anon key (uploads may fail due to RLS).")
+    supabase = create_client(SUPABASE_URL, os.getenv("SUPABASE_KEY"))
+else:
+    print("Warning: Supabase credentials not set — images will not be uploaded.")
+
+
+def upload_image(image_bytes: bytes, channel_name: str, message_id: int) -> str | None:
+    """Upload image bytes to Supabase Storage. Returns the public URL or None."""
+    if not supabase or not image_bytes:
+        return None
+    path = f"{channel_name}/{message_id}.jpg"
+    try:
+        supabase.storage.from_(SUPABASE_BUCKET).upload(
+            path=path,
+            file=image_bytes,
+            file_options={"content-type": "image/jpeg", "upsert": "true"},
+        )
+        # Persist the object key. The site signs it at request time (bucket may be private).
+        print(f"  Uploaded image: {path}")
+        return path
+    except Exception as e:
+        print(f"  Failed to upload image {path}: {e}")
+        return None
 
 client = TelegramClient(
     str(HERE / "telegram_session"),
@@ -106,49 +135,15 @@ def save_message(message_data):
         )
 
 
-async def save_image(message, channel_name):
-    """
-    Download Telegram image and upload it to S3.
-    Returns the S3 object key, or None if there is no image or S3 is not configured.
-    """
+async def save_image(message) -> bytes | None:
+    """Download image bytes from a Telegram message. Returns None if no photo."""
     if not message.photo:
         return None
-
-    if not S3_BUCKET:
-        return None
-
-    # Example:
-    # sgfooddeals/4030.jpg
-    image_key = f"{channel_name}/{message.id}.jpg"
-
     try:
-        # Download image from Telegram to memory
-        image_bytes = await client.download_media(
-            message,
-            file=bytes
-        )
-
-        if not image_bytes:
-            return None
-
-        # Upload to S3
-        s3.put_object(
-            Bucket=S3_BUCKET,
-            Key=image_key,
-            Body=image_bytes,
-            ContentType="image/jpeg"
-        )
-
-        print(f"Uploaded image: {image_key}")
-
-        return image_key
-
+        image_bytes = await client.download_media(message, file=bytes)
+        return image_bytes or None
     except Exception as e:
-        print(
-            f"Failed to save image "
-            f"{channel_name} message {message.id}: {e}"
-        )
-
+        print(f"Failed to download image for message {message.id}: {e}")
         return None
 
 
@@ -178,11 +173,9 @@ async def main():
                     print(f"Reached cutoff ({CUTOFF_DATE.isoformat()}) for {channel_name}, stopping.")
                     break
 
-                # Save image separately
-                image_key = await save_image(
-                    message,
-                    channel_name
-                )
+                # Download image and upload to Supabase
+                image_bytes = await save_image(message)
+                image_url = upload_image(image_bytes, channel_name, message.id)
 
                 message_data = {
                     "channel": channel_name,
@@ -194,9 +187,7 @@ async def main():
                         else None
                     ),
                     "text": message.text,
-
-                    # Only a reference to the image
-                    "image_key": image_key
+                    "image_url": image_url,
                 }
 
                 save_message(message_data)

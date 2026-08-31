@@ -19,6 +19,7 @@ crawler/telegram_session*
 
 # Scraped data (large files, managed separately)
 crawler/*.jsonl
+crawler/images/
 ai/*.jsonl
 db/*.jsonl
 last_scraped.json

@@ -60,6 +60,8 @@ export type Deal = {
   lng?: number;
   // All locations with their individual coordinates (for multi-pin map rendering)
   allLocations?: DbLocation[];
+  // Supabase Storage path — use getSignedImageUrl() server fn to get a temporary URL
+  imagePath?: string;
 };
 
 export function matchesQuery(deal: Deal, query: string) {

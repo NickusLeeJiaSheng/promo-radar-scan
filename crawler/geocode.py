@@ -1,36 +1,35 @@
 """
 geocode.py
-Reads processed.jsonl, geocodes ALL locations for each deal via Nominatim
-(free, no key required), and writes processed_geo.jsonl.
-
-Each deal's prediction will contain a `locations` array of objects:
-    [{"name": "Sengkang Grand Mall, 01-03", "lat": 1.3833, "lng": 103.8922}, ...]
-
-Vague locations like "All outlets" are kept in the array but without coords.
+Reads deals from the DB that have ungeocoded locations, geocodes them via
+Nominatim (free, no key required), and writes the coords back to the DB.
 
 Usage:
     python geocode.py
-    python geocode.py --input processed.jsonl --output processed_geo.jsonl
+    python geocode.py --all     # re-geocode every deal, not just new ones
 
 Nominatim docs: https://nominatim.org/release-docs/latest/api/Search/
 """
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
 
+import psycopg2.extras
 import requests
 
+HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE.parent / "db"))
+from db import get_connection, create_tables  # noqa: E402
+
 # ---------------------------------------------------------------------------
-# OneMap geocoder
+# Nominatim geocoder
 # ---------------------------------------------------------------------------
 
-# Nominatim (OSM) — free, no key required, 1 req/sec limit
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_URL     = "https://nominatim.openstreetmap.org/search"
 NOMINATIM_HEADERS = {"User-Agent": "promo-radar-scan/1.0 (geocoder)"}
-# Must honour 1 req/sec rate limit
-REQUEST_DELAY = 1.1  # seconds
+REQUEST_DELAY     = 1.1  # seconds — must honour 1 req/sec rate limit
 
 
 def geocode_nominatim(address: str) -> tuple[float, float] | None:
@@ -39,9 +38,9 @@ def geocode_nominatim(address: str) -> tuple[float, float] | None:
         r = requests.get(
             NOMINATIM_URL,
             params={
-                "q": f"{address}, Singapore",
-                "format": "json",
-                "limit": 1,
+                "q":            f"{address}, Singapore",
+                "format":       "json",
+                "limit":        1,
                 "countrycodes": "sg",
             },
             headers=NOMINATIM_HEADERS,
@@ -52,7 +51,7 @@ def geocode_nominatim(address: str) -> tuple[float, float] | None:
         if results:
             lat = float(results[0]["lat"])
             lng = float(results[0]["lon"])
-            # Sanity-check: must be in Singapore bounding box
+            # Sanity-check: must be within Singapore bounding box
             if 1.1 < lat < 1.5 and 103.5 < lng < 104.2:
                 return lat, lng
     except Exception as e:
@@ -62,23 +61,56 @@ def geocode_nominatim(address: str) -> tuple[float, float] | None:
 
 # Known coordinates for places Nominatim doesn't recognise
 KNOWN_COORDS: dict[str, tuple[float, float]] = {
-    "SMU Li Ka Shing Library":          (1.29666, 103.85011),
-    "SMU Li Ka Shing Library, B1-25":   (1.29666, 103.85011),
-    "30 Victoria Street, #02-01B":      (1.29549, 103.85201),
+    "SMU Li Ka Shing Library":        (1.29666, 103.85011),
+    "SMU Li Ka Shing Library, B1-25": (1.29666, 103.85011),
+    "30 Victoria Street, #02-01B":    (1.29549, 103.85201),
 }
 
 
 def clean_address(raw: str) -> str:
-    """
-    Strip unit numbers and simplify so OneMap can match the building name.
-    E.g. "Sengkang Grand Mall, 01-03" → "Sengkang Grand Mall"
-    """
+    """Strip unit numbers so Nominatim can match the building name."""
     import re
-    # Remove unit/level patterns like ", 01-03" or "#B1-07"
     cleaned = re.sub(r"[,\s]+#?[BbLl]?\d{1,2}-\d{2,3}\b", "", raw)
-    # Remove "Town Plaza" suffix noise
     cleaned = re.sub(r",\s*Town Plaza", "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip().rstrip(",").strip()
+
+
+SKIP_LOCS = {"all outlets", "selected outlets", "singapore", "all outlets"}
+
+
+def should_geocode(name: str) -> bool:
+    return bool(name) and name.lower() not in SKIP_LOCS
+
+
+# ---------------------------------------------------------------------------
+# DB queries
+# ---------------------------------------------------------------------------
+
+FETCH_UNGEOCODED_SQL = """
+SELECT id, locations
+FROM deals
+WHERE locations IS NOT NULL
+  AND EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(locations) AS loc
+      WHERE (loc->>'lat') IS NULL
+        AND loc->>'name' IS NOT NULL
+        AND loc->>'name' != ''
+  )
+ORDER BY posted_at DESC
+"""
+
+FETCH_ALL_SQL = """
+SELECT id, locations
+FROM deals
+WHERE locations IS NOT NULL
+ORDER BY posted_at DESC
+"""
+
+UPDATE_LOCATIONS_SQL = """
+UPDATE deals SET locations = %s::jsonb, updated_at = NOW()
+WHERE id = %s
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -87,118 +119,92 @@ def clean_address(raw: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",  default="processed.jsonl")
-    parser.add_argument("--output", default="processed_geo.jsonl")
+    parser.add_argument("--all", action="store_true",
+                        help="Re-geocode all deals, not just ones missing coords")
     args = parser.parse_args()
 
-    input_path  = Path(args.input)
-    output_path = Path(args.output)
+    conn = get_connection()
+    create_tables(conn)
 
-    if not input_path.exists():
-        print(f"Input file not found: {input_path}")
+    query = FETCH_ALL_SQL if args.all else FETCH_UNGEOCODED_SQL
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(query)
+        rows = cur.fetchall()
+
+    if not rows:
+        print("No deals need geocoding.")
+        conn.close()
         return
 
-    # --- Pass 1: collect all unique location strings ---
-    records: list[dict] = []
+    # ── Pass 1: collect all unique location strings that need geocoding ───────
     all_locations: set[str] = set()
+    for row in rows:
+        for loc in row["locations"]:
+            name = loc.get("name", "")
+            if should_geocode(name) and (args.all or loc.get("lat") is None):
+                all_locations.add(name)
 
-    with input_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-                records.append(rec)
-                pred = rec.get("prediction", rec)  # support both flat and nested
-                for loc in pred.get("locations", []):
-                    if loc and loc not in ("All outlets", "Selected outlets",
-                                           "Singapore", "All Outlets"):
-                        all_locations.add(loc)
-            except json.JSONDecodeError:
-                pass
+    print(f"Found {len(rows)} deals, {len(all_locations)} unique locations to geocode.\n")
 
-    print(f"Loaded {len(records)} records with {len(all_locations)} unique locations to geocode.")
-
-    # --- Pass 2: geocode unique locations (cache results) ---
+    # ── Pass 2: geocode with caching ──────────────────────────────────────────
     geo_cache: dict[str, tuple[float, float] | None] = {}
 
     for i, loc in enumerate(sorted(all_locations), 1):
         clean = clean_address(loc)
-        print(f"[{i}/{len(all_locations)}] Geocoding: '{clean}' (from '{loc}')")
+        print(f"[{i}/{len(all_locations)}] '{clean}'", end=" ... ", flush=True)
 
-        # Try progressively simpler variants until one works
-        candidates = [clean]
-        if clean != loc:
-            candidates.append(loc)
-        # Also try just the first token before " & " for multi-outlet strings
-        if " & " in clean:
-            candidates.append(clean.split(" & ")[0].strip())
-        # Try stripping trailing descriptors like "Canopy Plaza Level 1"
-        if "," in clean:
-            candidates.append(clean.split(",")[0].strip())
-
-        result = None
-        # Check known-coords overrides first (no API call needed)
         if loc in KNOWN_COORDS:
-            result = KNOWN_COORDS[loc]
+            geo_cache[loc] = KNOWN_COORDS[loc]
         elif clean in KNOWN_COORDS:
-            result = KNOWN_COORDS[clean]
+            geo_cache[loc] = KNOWN_COORDS[clean]
         else:
+            candidates = [clean]
+            if clean != loc:
+                candidates.append(loc)
+            if " & " in clean:
+                candidates.append(clean.split(" & ")[0].strip())
+            if "," in clean:
+                candidates.append(clean.split(",")[0].strip())
+
+            result = None
             for candidate in candidates:
                 result = geocode_nominatim(candidate)
                 if result:
                     break
                 time.sleep(REQUEST_DELAY)
 
-        geo_cache[loc] = result
-        if result:
-            print(f"  ✓ {result[0]:.5f}, {result[1]:.5f}")
-        else:
-            print(f"  ✗ Not found — will use None")
+            geo_cache[loc] = result
 
+        coords = geo_cache[loc]
+        print(f"✓ {coords[0]:.5f}, {coords[1]:.5f}" if coords else "✗ not found")
         time.sleep(REQUEST_DELAY)
 
-    # --- Pass 3: write output with locations array [{name, lat, lng}, ...] ---
-    ok = 0
-    skipped = 0
+    # ── Pass 3: write enriched locations back to DB ───────────────────────────
+    updated = 0
 
-    with output_path.open("w", encoding="utf-8") as f:
-        for rec in records:
-            pred = rec.get("prediction", rec)
-            raw_locations: list[str] = pred.get("locations", [])
-
-            # Build enriched locations array — every location kept, coords added where available
-            enriched: list[dict] = []
-            any_geocoded = False
-            for loc in raw_locations:
-                coords = geo_cache.get(loc)
-                entry: dict = {"name": loc, "lat": None, "lng": None}
-                if coords:
-                    entry["lat"], entry["lng"] = coords
-                    any_geocoded = True
+    with conn.cursor() as cur:
+        for row in rows:
+            enriched = []
+            for loc in row["locations"]:
+                name = loc.get("name", "")
+                entry = dict(loc)  # preserve existing fields
+                if should_geocode(name):
+                    coords = geo_cache.get(name)
+                    if coords:
+                        entry["lat"], entry["lng"] = coords
+                    elif args.all:
+                        entry["lat"], entry["lng"] = None, None
                 enriched.append(entry)
 
-            # Replace flat locations list + old lat/lng with the new enriched array
-            if "prediction" in rec:
-                rec["prediction"]["locations"] = enriched
-                # Remove old flat lat/lng fields if they exist
-                rec["prediction"].pop("lat", None)
-                rec["prediction"].pop("lng", None)
-            else:
-                rec["locations"] = enriched
-                rec.pop("lat", None)
-                rec.pop("lng", None)
+            cur.execute(UPDATE_LOCATIONS_SQL, (json.dumps(enriched), row["id"]))
+            updated += 1
 
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    conn.commit()
+    conn.close()
 
-            if any_geocoded:
-                ok += 1
-            else:
-                skipped += 1
-
-    print(f"\nDone — {ok} deals with at least one geocoded location, {skipped} with no coordinates.")
-    print(f"Output: {output_path}")
+    geocoded = sum(1 for v in geo_cache.values() if v is not None)
+    print(f"\nDone — {geocoded}/{len(all_locations)} locations geocoded, {updated} deals updated in DB.")
 
 
 if __name__ == "__main__":

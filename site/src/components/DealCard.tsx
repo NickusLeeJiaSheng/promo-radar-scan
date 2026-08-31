@@ -61,7 +61,7 @@ export function DealCard({ deal, className, saved, onToggleSave }: Props) {
               e.preventDefault(); // prevent card navigation when clicking heart
               onToggleSave(deal.id);
             }}
-            className="absolute right-3 top-3 grid size-8 place-items-center rounded-full border border-border bg-card/90 text-muted-foreground backdrop-blur transition-colors hover:text-primary"
+            className="absolute right-3 top-3 z-10 grid size-8 place-items-center rounded-full border border-border bg-card/90 text-muted-foreground backdrop-blur transition-colors hover:text-primary"
           >
             <Heart className={cn("size-4", saved && "fill-primary text-primary")} />
           </button>

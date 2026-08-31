@@ -37,8 +37,9 @@ CREATE TABLE IF NOT EXISTS raw_messages (
     message_id    INTEGER,
     posted_at     TIMESTAMPTZ,
     text          TEXT,
-    image_key     TEXT,
+    image_url     TEXT,
     scraped_at    TIMESTAMPTZ DEFAULT NOW(),
+    processed     BOOLEAN DEFAULT FALSE,
     UNIQUE (channel, message_id)
 );
 
@@ -59,7 +60,6 @@ CREATE TABLE IF NOT EXISTS deals (
     valid_from        DATE,
     valid_to          DATE,
     time              TEXT,
-    -- locations is an array of {name, lat, lng} objects
     locations         JSONB,
     redemption_method TEXT,
     restrictions      JSONB,
@@ -67,8 +67,29 @@ CREATE TABLE IF NOT EXISTS deals (
     more_info         TEXT,
     created_at        TIMESTAMPTZ DEFAULT NOW(),
     updated_at        TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE (channel, message_id)
+    -- Deduplicate across channels: same merchant + offer + validity = same promo
+    UNIQUE (merchant, offer, valid_from, valid_to)
 );
+"""
+
+
+# Older DBs stored image_url as BYTEA. CREATE TABLE IF NOT EXISTS never fixes that.
+MIGRATE_IMAGE_URL_TO_TEXT_SQL = """
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'raw_messages'
+          AND column_name = 'image_url'
+          AND udt_name = 'bytea'
+    ) THEN
+        ALTER TABLE raw_messages
+            ALTER COLUMN image_url TYPE TEXT
+            USING convert_from(image_url, 'UTF8');
+    END IF;
+END $$;
 """
 
 
@@ -76,6 +97,7 @@ def create_tables(conn):
     """Create all tables if they don't already exist."""
     with conn.cursor() as cur:
         cur.execute(CREATE_TABLES_SQL)
+        cur.execute(MIGRATE_IMAGE_URL_TO_TEXT_SQL)
     conn.commit()
     print("Tables 'raw_messages' and 'deals' are ready.")
 
@@ -86,14 +108,14 @@ def create_table(conn):
 
 
 UPSERT_RAW_MESSAGE_SQL = """
-INSERT INTO raw_messages (channel, channel_title, message_id, posted_at, text, image_key)
-VALUES (%(channel)s, %(channel_title)s, %(message_id)s, %(posted_at)s, %(text)s, %(image_key)s)
+INSERT INTO raw_messages (channel, channel_title, message_id, posted_at, text, image_url)
+VALUES (%(channel)s, %(channel_title)s, %(message_id)s, %(posted_at)s, %(text)s, %(image_url)s)
 ON CONFLICT (channel, message_id)
 DO UPDATE SET
     channel_title = EXCLUDED.channel_title,
     posted_at     = EXCLUDED.posted_at,
     text          = EXCLUDED.text,
-    image_key     = EXCLUDED.image_key;
+    image_url     = EXCLUDED.image_url;
 """
 
 
@@ -105,7 +127,7 @@ def upsert_raw_message(cur, message_data: dict):
         "message_id":    message_data.get("message_id"),
         "posted_at":     message_data.get("posted_at"),
         "text":          message_data.get("text"),
-        "image_key":     message_data.get("image_key"),
+        "image_url":     message_data.get("image_url"),
     })
 
 
@@ -121,20 +143,20 @@ INSERT INTO deals (
     %(discount)s, %(valid_from)s, %(valid_to)s, %(time)s, %(locations)s,
     %(redemption_method)s, %(restrictions)s, %(promo_code)s, %(more_info)s, NOW()
 )
-ON CONFLICT (channel, message_id)
+ON CONFLICT (merchant, offer, valid_from, valid_to)
 DO UPDATE SET
-    channel_title     = EXCLUDED.channel_title,
-    posted_at         = EXCLUDED.posted_at,
-    posted_date       = EXCLUDED.posted_date,
-    raw_input         = EXCLUDED.raw_input,
-    merchant          = EXCLUDED.merchant,
+    -- Keep the earliest channel that posted this deal
+    channel           = CASE WHEN deals.posted_at <= EXCLUDED.posted_at THEN deals.channel ELSE EXCLUDED.channel END,
+    channel_title     = CASE WHEN deals.posted_at <= EXCLUDED.posted_at THEN deals.channel_title ELSE EXCLUDED.channel_title END,
+    message_id        = CASE WHEN deals.posted_at <= EXCLUDED.posted_at THEN deals.message_id ELSE EXCLUDED.message_id END,
+    posted_at         = LEAST(deals.posted_at, EXCLUDED.posted_at),
+    posted_date       = LEAST(deals.posted_date, EXCLUDED.posted_date),
+    raw_input         = CASE WHEN deals.posted_at <= EXCLUDED.posted_at THEN deals.raw_input ELSE EXCLUDED.raw_input END,
+    -- Always take the latest processed fields in case geocoding improved
     category          = EXCLUDED.category,
-    offer             = EXCLUDED.offer,
     price             = EXCLUDED.price,
     original_price    = EXCLUDED.original_price,
     discount          = EXCLUDED.discount,
-    valid_from        = EXCLUDED.valid_from,
-    valid_to          = EXCLUDED.valid_to,
     time              = EXCLUDED.time,
     locations         = EXCLUDED.locations,
     redemption_method = EXCLUDED.redemption_method,

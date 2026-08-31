@@ -6,23 +6,80 @@ import { type CategoryId, type Deal } from "./deals";
 
 const CATEGORY_MAP: Record<string, CategoryId> = {
   "food & beverage": "food",
+  "food and beverage": "food",
   food: "food",
   dining: "food",
+  restaurant: "food",
+  cafe: "food",
+  bakery: "food",
+  coffee: "food",
   shopping: "shopping",
   fashion: "shopping",
+  retail: "shopping",
   beauty: "beauty",
   "health & beauty": "beauty",
+  "health and beauty": "beauty",
+  wellness: "beauty",
+  skincare: "beauty",
+  spa: "beauty",
+  salon: "beauty",
+  slimming: "beauty",
+  cosmetics: "beauty",
   entertainment: "entertainment",
   travel: "travel",
   hotels: "hotels",
   hotel: "hotels",
+  accommodation: "hotels",
   electronics: "electronics",
+  tech: "electronics",
   fitness: "fitness",
+  gym: "fitness",
+  exercise: "fitness",
   services: "services",
+  service: "services",
 };
 
-function normaliseCategory(raw: string): CategoryId {
-  return CATEGORY_MAP[raw.toLowerCase().trim()] ?? "food";
+export function normaliseCategory(raw: string): CategoryId {
+  const key = raw
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!key) return "food";
+  if (CATEGORY_MAP[key]) return CATEGORY_MAP[key];
+
+  if (/(beauty|wellness|skincare|haircare|cosmetics|salon|spa|slimming|facial|makeup)/.test(key)) {
+    return "beauty";
+  }
+  if (/(food|dining|restaurant|cafe|coffee|bakery|beverage|eatery)/.test(key)) {
+    return "food";
+  }
+  if (/(shopping|fashion|retail|sale|brands)/.test(key)) {
+    return "shopping";
+  }
+  if (/(entertainment|movie|concert|festival|event|games)/.test(key)) {
+    return "entertainment";
+  }
+  if (/(travel|flight|holiday|flight|airline|staycation)/.test(key)) {
+    return "travel";
+  }
+  if (/(hotel|accommodation|stay|lodging)/.test(key)) {
+    return "hotels";
+  }
+  if (/(electronic|tech|audio|phone|gadget|computer)/.test(key)) {
+    return "electronics";
+  }
+  if (/(fitness|gym|exercise|health|workout|sports)/.test(key)) {
+    return "fitness";
+  }
+  if (/(service|repair|cleaning|maintenance|therapy)/.test(key)) {
+    return "services";
+  }
+
+  return "food";
 }
 
 // ── Offer label ────────────────────────────────────────────────────────────────
@@ -143,6 +200,16 @@ export function dbRowToDeal(row: DbDeal): Deal {
 
   // Attach all locations for multi-pin map rendering
   deal.allLocations = row.locations ?? [];
+
+  // Crawler stores a Storage object key or a public URL. fetchDealsFromDb
+  // replaces keys with a signed URL so the card can render <img src={deal.image}>.
+  if (row.image_url) {
+    if (/^https?:\/\//i.test(row.image_url)) {
+      deal.image = row.image_url;
+    } else {
+      deal.imagePath = row.image_url;
+    }
+  }
 
   return deal;
 }

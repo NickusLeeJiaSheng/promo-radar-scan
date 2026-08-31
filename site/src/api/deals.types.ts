@@ -25,4 +25,5 @@ export interface DbDeal {
   restrictions: string[];
   promo_code: string | null;
   more_info: string | null;
+  image_url: string | null;  // S3 object key, e.g. "sgfooddeals/4030.jpg"
 }
