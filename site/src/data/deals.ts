@@ -39,6 +39,7 @@ export type Deal = {
   title: string;
   description: string;
   terms: string;
+  restrictions?: string[];
   offer: string;
   category: CategoryId;
   image?: string;

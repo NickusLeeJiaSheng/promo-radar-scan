@@ -14,6 +14,7 @@ type Props = {
 export function DealCard({ deal, className, saved, onToggleSave }: Props) {
   const category = categoryMap[deal.category];
   const hasExternalLink = Boolean(deal.moreInfoUrl);
+  const restrictions = (deal.restrictions ?? []).filter((r) => r && r.trim().length > 0);
 
   // The card is either a full external <a> or an internal router <Link>
   const CardWrapper = hasExternalLink
@@ -85,6 +86,10 @@ export function DealCard({ deal, className, saved, onToggleSave }: Props) {
         </h3>
         <p className="line-clamp-2 text-sm text-muted-foreground">{deal.description}</p>
 
+        {restrictions.length > 0 && (
+          <p className="text-[11px] text-muted-foreground">{restrictions.join(" · ")}</p>
+        )}
+
         <div className="mt-auto space-y-1.5 pt-2 text-sm">
           <p className="flex items-center gap-1.5 text-muted-foreground">
             <MapPin className="size-3.5 text-primary" />
@@ -119,6 +124,7 @@ export function DealCard({ deal, className, saved, onToggleSave }: Props) {
 export function DealRow({ deal, distanceKm }: { deal: Deal; distanceKm?: number }) {
   const dist = distanceKm ?? deal.distanceKm;
   const hasExternalLink = Boolean(deal.moreInfoUrl);
+  const restrictions = (deal.restrictions ?? []).filter((r) => r && r.trim().length > 0);
 
   const RowWrapper = hasExternalLink
     ? ({ children, className: cls }: { children: React.ReactNode; className?: string }) => (
@@ -158,6 +164,11 @@ export function DealRow({ deal, distanceKm }: { deal: Deal; distanceKm?: number 
           {dist > 0 ? ` · ${dist} km` : ""}
           {deal.expiry !== "Ongoing" ? ` · Ends ${deal.expiry}` : ""}
         </p>
+        {restrictions.length > 0 && (
+          <p className="mt-1 truncate text-[11px] text-muted-foreground">
+            {restrictions.join(" · ")}
+          </p>
+        )}
       </div>
       <span className="shrink-0 rounded-full bg-accent px-2.5 py-1 font-display text-xs font-bold text-accent-foreground">
         {deal.offer}

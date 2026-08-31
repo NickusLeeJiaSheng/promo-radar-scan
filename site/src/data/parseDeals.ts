@@ -170,6 +170,7 @@ export function dbRowToDeal(row: DbDeal): Deal {
     title: buildTitle(row),
     description: row.offer,
     terms: terms || "T&Cs apply.",
+    restrictions: (row.restrictions ?? []).filter((r) => r && r.trim().length > 0),
     offer: buildOffer(row),
     category: normaliseCategory(row.category),
     location: locationStr,
