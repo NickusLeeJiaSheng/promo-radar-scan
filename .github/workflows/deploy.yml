@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# deploy.yml — Build & Deploy to GitHub Pages (push to main only)
+#
+# Triggers:
+#   • Push / merge to `main`
+#   • Manual trigger (workflow_dispatch)
+#
+# Required Secrets: SUPABASE_URL, SUPABASE_KEY, SUPABASE_BUCKET
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: "🚀 Build & Deploy"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true   # cancel stale deploy if a new push arrives
+
+jobs:
+  # ── Build ──────────────────────────────────────────────────────────────────
+  build:
+    name: "🏗️  Build Site"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install dependencies
+        working-directory: site
+        run: npm ci
+
+      - name: Write .env for Vite build
+        # vite.config.ts sets envDir to repo root (one level above site/)
+        run: |
+          cat > .env <<EOF
+          VITE_SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_KEY=${{ secrets.SUPABASE_KEY }}
+          VITE_SUPABASE_BUCKET=${{ secrets.SUPABASE_BUCKET }}
+          EOF
+
+      - name: Build
+        working-directory: site
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # TanStack Start / Nitro outputs static assets here
+          path: site/.output/public
+
+  # ── Deploy ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: "🚀 Deploy to GitHub Pages"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

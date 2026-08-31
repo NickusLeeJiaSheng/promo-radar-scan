@@ -1,0 +1,123 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# promo-radar-scan · GitLab CI/CD
+#
+# Stages:
+#   pipeline  — runs pipeline.py           → schedule / manual only
+#   build     — builds the Vite site       → push to main / manual only
+#   deploy    — deploys to GitLab Pages    → push to main / manual only
+#
+# Required CI/CD Variables (Settings → CI/CD → Variables):
+#   TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION (base64),
+#   DATABASE_URL, OPENROUTER_API_KEY,
+#   SUPABASE_URL, SUPABASE_KEY, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
+# ─────────────────────────────────────────────────────────────────────────────
+
+stages:
+  - pipeline
+  - build
+  - deploy
+
+default:
+  interruptible: true
+
+variables:
+  SKIP_SCRAPE:   "false"
+  SKIP_PROCESS:  "false"
+  SKIP_GEOCODE:  "false"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1: Data Pipeline  ← schedule / manual only
+# ─────────────────────────────────────────────────────────────────────────────
+data_pipeline:
+  stage: pipeline
+  image: python:3.12-slim
+  timeout: 30 minutes
+
+  before_script:
+    - pip install --quiet -r crawler/requirements.txt
+    - |
+      cat > .env <<EOF
+      TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      DATABASE_URL=${DATABASE_URL}
+      OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      SUPABASE_URL=${SUPABASE_URL}
+      SUPABASE_KEY=${SUPABASE_KEY}
+      SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      SUPABASE_BUCKET=${SUPABASE_BUCKET}
+      EOF
+    - echo "${TELEGRAM_SESSION}" | base64 --decode > crawler/telegram_session.session
+
+  script:
+    - |
+      ARGS=""
+      [ "${SKIP_SCRAPE}"  = "true" ] && ARGS="$ARGS --skip-scrape"
+      [ "${SKIP_PROCESS}" = "true" ] && ARGS="$ARGS --skip-process"
+      [ "${SKIP_GEOCODE}" = "true" ] && ARGS="$ARGS --skip-geocode"
+      python pipeline.py $ARGS
+
+  rules:
+    # Only run on scheduled pipelines or manual web/API triggers
+    # - if: '$CI_PIPELINE_SOURCE == "schedule"'   # ← temporarily disabled
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "api"'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2: Build Site  ← push to main only
+# ─────────────────────────────────────────────────────────────────────────────
+build_site:
+  stage: build
+  image: node:20-slim
+  timeout: 15 minutes
+
+  cache:
+    key:
+      files:
+        - site/package-lock.json
+    paths:
+      - site/node_modules/
+    policy: pull-push
+
+  before_script:
+    - |
+      cat > .env <<EOF
+      VITE_SUPABASE_URL=${SUPABASE_URL}
+      VITE_SUPABASE_KEY=${SUPABASE_KEY}
+      VITE_SUPABASE_BUCKET=${SUPABASE_BUCKET}
+      EOF
+    - cd site && npm ci
+
+  script:
+    - npm run build
+
+  artifacts:
+    paths:
+      - site/.output/public
+    expire_in: 1 hour
+
+  rules:
+    # Only run on pushes to main (not schedules)
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3: Deploy to GitLab Pages  ← push to main only
+# ─────────────────────────────────────────────────────────────────────────────
+pages:
+  stage: deploy
+  needs: [build_site]
+  script:
+    - mv site/.output/public public
+
+  artifacts:
+    paths:
+      - public
+    expire_in: 30 days
+
+  environment:
+    name: production
+    url: https://$CI_PAGES_DOMAIN
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
