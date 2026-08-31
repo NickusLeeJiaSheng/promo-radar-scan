@@ -81,10 +81,6 @@ function Home() {
         </div>
       </section>
 
-      <section className="mt-8">
-        <CategoryChips value={chip} onChange={setChip} />
-      </section>
-
       {isError && (
         <p className="mt-8 text-center text-sm text-destructive">
           Failed to load deals. Please refresh the page.
@@ -124,8 +120,12 @@ function Home() {
         </div>
       </section>
 
+      <section className="mt-8">
+        <CategoryChips value={chip} onChange={setChip} />
+      </section>
+
       {/* ── Main grid ───────────────────────────────────────────────────── */}
-      <section className="mt-14">
+      <section className="mt-8">
         <h2 className="text-2xl font-bold">
           {chip === "near" ? "Closest to you" : "Fresh from the channels"}
         </h2>

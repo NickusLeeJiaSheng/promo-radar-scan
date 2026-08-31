@@ -18,6 +18,7 @@ import argparse
 import json
 import sys
 import time
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import psycopg2
