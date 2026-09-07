@@ -25,41 +25,41 @@ concurrency:
   cancel-in-progress: true   # cancel stale deploy if a new push arrives
 
 jobs:
-  # ── Deploy Cloud Function ──────────────────────────────────────────────────
-  deploy_function:
-    name: "☁️  Deploy Cloud Function"
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCF_SA_KEY }}
-
-      - name: Deploy Cloud Function
-        uses: google-github-actions/deploy-cloud-functions@v3
-        with:
-          name: deals
-          runtime: nodejs20
-          entry_point: deals
-          source_dir: functions/
-          region: asia-southeast1
-          set_env_vars: >-
-            DATABASE_URL=${{ secrets.DATABASE_URL }},
-            SUPABASE_URL=${{ secrets.SUPABASE_URL }},
-            SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }},
-            SUPABASE_BUCKET=${{ secrets.SUPABASE_BUCKET }},
-            ALLOWED_ORIGIN=https://${{ github.repository_owner }}.github.io
+  # ── Deploy Cloud Function (disabled — not ready) ──────────────────────────
+  # deploy_function:
+  #   name: "☁️  Deploy Cloud Function"
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 15
+  #
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Authenticate to Google Cloud
+  #       uses: google-github-actions/auth@v2
+  #       with:
+  #         credentials_json: ${{ secrets.GCF_SA_KEY }}
+  #
+  #     - name: Deploy Cloud Function
+  #       uses: google-github-actions/deploy-cloud-functions@v3
+  #       with:
+  #         name: deals
+  #         runtime: nodejs20
+  #         entry_point: deals
+  #         source_dir: functions/
+  #         region: asia-southeast1
+  #         set_env_vars: >-
+  #           DATABASE_URL=${{ secrets.DATABASE_URL }},
+  #           SUPABASE_URL=${{ secrets.SUPABASE_URL }},
+  #           SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY }},
+  #           SUPABASE_BUCKET=${{ secrets.SUPABASE_BUCKET }},
+  #           ALLOWED_ORIGIN=https://${{ github.repository_owner }}.github.io
 
   # ── Build ──────────────────────────────────────────────────────────────────
   build:
     name: "🏗️  Build Site"
     runs-on: ubuntu-latest
-    needs: deploy_function
+    # needs: deploy_function  # re-enable when GCF deploy is ready
     timeout-minutes: 15
 
     steps:
