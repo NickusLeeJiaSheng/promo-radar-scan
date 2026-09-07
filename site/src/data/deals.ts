@@ -69,12 +69,12 @@ export function matchesQuery(deal: Deal, query: string) {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return [
-    deal.merchant,
-    deal.title,
-    deal.description,
-    deal.location,
-    deal.offer,
-    categoryMap[deal.category].label,
+    deal.merchant ?? "",
+    deal.title ?? "",
+    deal.description ?? "",
+    deal.location ?? "",
+    deal.offer ?? "",
+    categoryMap[deal.category]?.label ?? "",
   ]
     .join(" ")
     .toLowerCase()

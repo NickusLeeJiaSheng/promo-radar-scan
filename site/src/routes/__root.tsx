@@ -5,9 +5,7 @@ import {
   createRootRouteWithContext,
   useRouter,
   HeadContent,
-  Scripts,
 } from "@tanstack/react-router";
-import { type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -101,31 +99,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     ],
   }),
 
-  shellComponent: RootShell,
   component: RootComponent,
   notFoundComponent: NotFoundComponent,
   errorComponent: ErrorComponent,
 });
-
-function RootShell({ children }: { children: ReactNode }) {
-  return (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  );
-}
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* HeadContent injects meta/link tags into <head> managed by TanStack Router */}
+      <HeadContent />
       <div className="flex min-h-screen flex-col">
         <SiteHeader />
         <main className="flex-1 pb-20 md:pb-0">
@@ -140,4 +125,3 @@ function RootComponent() {
     </QueryClientProvider>
   );
 }
-

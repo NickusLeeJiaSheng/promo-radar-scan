@@ -1,49 +1,45 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ArrowLeft, Clock, ExternalLink, Heart, MapPin, Ruler, Send } from "lucide-react";
+import { createFileRoute, Link, notFound, useParams } from "@tanstack/react-router";
+import { ArrowLeft, Clock, ExternalLink, Heart, Loader2, MapPin, Ruler, Send } from "lucide-react";
 import { useState } from "react";
 
 import { DealCard } from "@/components/DealCard";
 import { DealMap } from "@/components/DealMap";
 import { categoryMap } from "@/data/deals";
-import { fetchDeals } from "@/data/parseDeals";
 import { useSavedDeals } from "@/hooks/useSavedDeals";
+import { useDeals } from "@/hooks/useDeals";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/deal/$dealId")({
-  loader: async ({ params }) => {
-    const deals = await fetchDeals();
-    const deal = deals.find((d) => d.id === params.dealId);
-    if (!deal) throw notFound();
-    const related = deals
-      .filter((d) => d.category === deal.category && d.id !== deal.id)
-      .slice(0, 4);
-    return { deal, related };
-  },
-  head: ({ loaderData }) => {
-    if (!loaderData) {
-      return {
-        meta: [{ title: "Deal not found — DealHub" }, { name: "robots", content: "noindex" }],
-      };
-    }
-    const { deal } = loaderData;
-    const title = `${deal.title} at ${deal.merchant} — DealHub`;
-    const description = `${deal.offer} · ${deal.location}. ${deal.description}`;
-    return {
-      meta: [
-        { title },
-        { name: "description", content: description.slice(0, 155) },
-        { property: "og:title", content: title },
-        { property: "og:description", content: description.slice(0, 155) },
-      ],
-    };
-  },
+  head: () => ({
+    meta: [
+      { title: "Deal — DealHub" },
+      { name: "description", content: "View deal details on DealHub." },
+    ],
+  }),
   component: DealDetail,
 });
 
 function DealDetail() {
-  const { deal, related } = Route.useLoaderData();
+  const { dealId } = useParams({ from: "/deal/$dealId" });
+  const { data: allDeals = [], isLoading } = useDeals();
   const { isSaved, toggle } = useSavedDeals();
-  const [selected, setSelected] = useState<string | null>(deal.id);
+  const [selected, setSelected] = useState<string | null>(dealId);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const deal = allDeals.find((d) => d.id === dealId);
+  if (!deal) throw notFound();
+
+  const related = allDeals
+    .filter((d) => d.category === deal.category && d.id !== deal.id)
+    .slice(0, 4);
+
   const category = categoryMap[deal.category];
 
   return (
@@ -134,7 +130,7 @@ function DealDetail() {
 
       <div className="mt-6 grid gap-6 md:grid-cols-2">
         <section className="surface-panel p-6">
-          <h2 className="text-xl font-bold">Terms & conditions</h2>
+          <h2 className="text-xl font-bold">Terms &amp; conditions</h2>
           <p className="mt-2 text-sm text-muted-foreground">{deal.terms}</p>
         </section>
         <section className="surface-panel p-6">
@@ -146,7 +142,7 @@ function DealDetail() {
             Telegram {deal.channel} · scraped {deal.scrapedAgo}
           </p>
           <p className="mt-3 rounded-[var(--radius-lg)] bg-surface p-4 text-sm italic text-muted-foreground">
-            “{deal.originalPost}”
+            "{deal.originalPost}"
           </p>
         </section>
       </div>

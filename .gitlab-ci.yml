@@ -119,5 +119,5 @@ pages:
     url: https://$CI_PAGES_DOMAIN
 
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
-    - if: '$CI_PIPELINE_SOURCE == "web"'
+    # - if: '$CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"'
+    # - if: '$CI_PIPELINE_SOURCE == "web"'

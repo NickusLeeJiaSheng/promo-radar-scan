@@ -166,7 +166,7 @@ export function dbRowToDeal(row: DbDeal): Deal {
 
   const deal: Deal = {
     id: `${row.channel}-${row.message_id}`,
-    merchant: row.merchant,
+    merchant: row.merchant ?? "Unknown",
     title: buildTitle(row),
     description: row.offer,
     terms: terms || "T&Cs apply.",
@@ -228,13 +228,14 @@ export async function fetchDeals(): Promise<Deal[]> {
       const deal = dbRowToDeal(row);
 
       // De-duplicate by merchant + offer in case channels cross-post the same deal
-      const key = `${deal.merchant.toLowerCase()}::${deal.offer.toLowerCase()}`;
+      const key = `${(deal.merchant ?? "").toLowerCase()}::${(deal.offer ?? "").toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
 
       deals.push(deal);
-    } catch {
-      // Skip malformed rows
+    } catch (err) {
+      // Log malformed rows so we can debug them
+      console.error("dbRowToDeal failed for row", row?.channel, row?.message_id, err);
     }
   }
 

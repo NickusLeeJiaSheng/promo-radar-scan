@@ -1,0 +1,19 @@
+{
+  "name": "promo-radar-api",
+  "version": "1.0.0",
+  "description": "Google Cloud Function — serves deal data from Neon DB with Supabase signed image URLs",
+  "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "npx @google-cloud/functions-framework --target=deals"
+  },
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.4.5",
+    "@supabase/supabase-js": "^2.112.4",
+    "dotenv": "^17.4.2",
+    "postgres": "^3.4.9"
+  }
+}
