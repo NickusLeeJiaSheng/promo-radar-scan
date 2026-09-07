@@ -2,17 +2,19 @@
 pipeline.py
 Runs the full deal pipeline in sequence:
 
-    1. crawler/main.py    — scrape new Telegram messages → raw_messages table
-    2. ai/process.py      — call OpenRouter on unprocessed rows → deals table
-    3. crawler/geocode.py — geocode locations in the deals table
+    1. crawler/main.py              — scrape new Telegram messages → raw_messages table
+    2. ai/process.py                — call OpenRouter on unprocessed rows → deals table
+    3. crawler/geocode.py           — geocode locations in the deals table
+    4. crawler/brand_locations.py   — fill missing locations via OneMap brand search
 
 Usage:
-    python pipeline.py                   # run all steps
-    python pipeline.py --skip-scrape     # skip step 1 (use existing raw_messages)
-    python pipeline.py --skip-process    # skip step 2
-    python pipeline.py --skip-geocode    # skip step 3
+    python pipeline.py                          # run all steps
+    python pipeline.py --skip-scrape            # skip step 1 (use existing raw_messages)
+    python pipeline.py --skip-process           # skip step 2
+    python pipeline.py --skip-geocode           # skip step 3
+    python pipeline.py --skip-brand-locations   # skip step 4
     python pipeline.py --model google/gemini-2.0-flash-exp:free
-    python pipeline.py --limit 50        # only process 50 raw messages
+    python pipeline.py --limit 50               # only process 50 raw messages
 """
 
 import argparse
@@ -22,9 +24,10 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 
-CRAWLER  = HERE / "crawler" / "main.py"
-PROCESS  = HERE / "ai"      / "process.py"
-GEOCODE  = HERE / "crawler" / "geocode.py"
+CRAWLER         = HERE / "crawler" / "main.py"
+PROCESS         = HERE / "ai"      / "process.py"
+GEOCODE         = HERE / "crawler" / "geocode.py"
+BRAND_LOCATIONS = HERE / "crawler" / "brand_locations.py"
 
 
 def run(label: str, cmd: list[str]) -> bool:
@@ -42,9 +45,10 @@ def run(label: str, cmd: list[str]) -> bool:
 
 def main():
     parser = argparse.ArgumentParser(description="Run the full promo-radar pipeline")
-    parser.add_argument("--skip-scrape",  action="store_true", help="Skip the Telegram scrape step")
-    parser.add_argument("--skip-process", action="store_true", help="Skip the OpenRouter processing step")
-    parser.add_argument("--skip-geocode", action="store_true", help="Skip the geocoding step")
+    parser.add_argument("--skip-scrape",           action="store_true", help="Skip the Telegram scrape step")
+    parser.add_argument("--skip-process",          action="store_true", help="Skip the OpenRouter processing step")
+    parser.add_argument("--skip-geocode",          action="store_true", help="Skip the geocoding step")
+    parser.add_argument("--skip-brand-locations",  action="store_true", help="Skip the OneMap brand location fill step")
     parser.add_argument("--model",  default=None, help="Override OpenRouter model for process.py")
     parser.add_argument("--limit",  type=int, default=None, help="Limit messages processed by process.py")
     parser.add_argument("--reprocess", action="store_true", help="Re-process already-processed messages")
@@ -92,6 +96,16 @@ def main():
             steps_run += 1
     else:
         print("Skipping geocode step.")
+
+    # ── Step 4: Fill missing locations via OneMap ─────────────────────────────
+    if not args.skip_brand_locations:
+        ok = run("Fill missing locations via OneMap", [sys.executable, str(BRAND_LOCATIONS)])
+        if not ok:
+            steps_failed += 1
+        else:
+            steps_run += 1
+    else:
+        print("Skipping brand locations step.")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     print(f"\n{'='*60}")

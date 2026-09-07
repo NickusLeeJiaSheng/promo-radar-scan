@@ -30,6 +30,13 @@ def get_connection():
 
 
 CREATE_TABLES_SQL = """
+CREATE TABLE IF NOT EXISTS brand_outlets (
+    id           SERIAL PRIMARY KEY,
+    merchant     TEXT UNIQUE NOT NULL,
+    outlets      JSONB NOT NULL DEFAULT '[]',
+    looked_up_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS raw_messages (
     id            SERIAL PRIMARY KEY,
     channel       TEXT,
@@ -99,7 +106,7 @@ def create_tables(conn):
         cur.execute(CREATE_TABLES_SQL)
         cur.execute(MIGRATE_IMAGE_URL_TO_TEXT_SQL)
     conn.commit()
-    print("Tables 'raw_messages' and 'deals' are ready.")
+    print("Tables 'brand_outlets', 'raw_messages' and 'deals' are ready.")
 
 
 # Keep old name as an alias for load_to_db.py compatibility
