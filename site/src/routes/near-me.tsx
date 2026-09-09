@@ -192,6 +192,20 @@ function NearMe() {
         </div>
       </div>
 
+      {/* ── Mobile radius row (shown only on small screens) ──────────────────── */}
+      <div className="mt-3 flex items-center gap-3 sm:hidden">
+        <span className="text-sm text-muted-foreground">Radius</span>
+        <input
+          type="range"
+          min={1}
+          max={30}
+          value={radius}
+          onChange={(e) => setRadius(Number(e.target.value))}
+          className="flex-1 accent-primary"
+        />
+        <span className="w-12 text-right text-sm font-medium text-foreground">{radius} km</span>
+      </div>
+
       {/* ── Loading skeleton ────────────────────────────────────────────────── */}
       {dealsLoading && (
         <div className="mt-6 flex h-[420px] items-center justify-center rounded-[var(--radius-2xl)] border border-border bg-card lg:h-[620px]">
