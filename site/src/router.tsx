@@ -7,6 +7,7 @@ export const getRouter = () => {
 
   const router = createRouter({
     routeTree,
+    basepath: "/promo-radar-scan",
     context: { queryClient },
     defaultPreload: "intent",
   });
