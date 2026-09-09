@@ -45,26 +45,31 @@ OPENROUTER_URL  = "https://openrouter.ai/api/v1/chat/completions"
 # System prompt — instructs the model to return a strict JSON object
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are a deal extraction assistant. Given a Telegram promotion message, extract the deal fields and return ONLY a valid JSON object with exactly these keys:
+SYSTEM_PROMPT_TEMPLATE = """You are a deal extraction assistant. Today's date is {today}. Given a Telegram promotion message, extract the deal fields and return ONLY a valid JSON object with exactly these keys:
 
-{
+{{
   "merchant": string,
   "category": string,         // one of: food & beverage, shopping, beauty, entertainment, travel, hotels, electronics, fitness, services, other
   "offer": string,            // full offer description
   "price": string | null,     // e.g. "$6.10"
   "original_price": string | null,
   "discount": string | null,  // e.g. "30% OFF", "1-for-1"
-  "valid_from": string | null, // YYYY-MM-DD
-  "valid_to": string | null,   // YYYY-MM-DD
+  "valid_from": string | null, // YYYY-MM-DD — infer the year from today's date if not stated
+  "valid_to": string | null,   // YYYY-MM-DD — infer the year from today's date if not stated
   "time": string | null,      // opening hours or time restriction
   "locations": [string],      // list of outlet names or areas
   "redemption_method": string | null,
   "restrictions": [string],   // list of T&C strings
   "promo_code": string | null,
   "more_info": string | null  // URL or link
-}
+}}
 
 Return ONLY the JSON object. No explanation, no markdown, no code fences."""
+
+
+def get_system_prompt() -> str:
+    today = date.today().strftime("%Y-%m-%d")
+    return SYSTEM_PROMPT_TEMPLATE.format(today=today)
 
 # ---------------------------------------------------------------------------
 # OpenRouter call
@@ -81,7 +86,7 @@ def call_openrouter(text: str, model: str, retries: int = 3) -> dict | None:
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt()},
             {"role": "user",   "content": text},
         ],
         "temperature": 0.1,  # low temp for consistent structured output

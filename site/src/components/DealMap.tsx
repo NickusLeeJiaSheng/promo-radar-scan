@@ -2,9 +2,10 @@ import "leaflet/dist/leaflet.css";
 
 import L from "leaflet";
 import { ExternalLink, Navigation } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  CircleMarker,
   MapContainer,
   Marker,
   Popup,
@@ -85,7 +86,39 @@ function MapFlyTo({
   return null;
 }
 
-// ── Locate me button ──────────────────────────────────────────────────────────
+// ── User location blue dot ────────────────────────────────────────────────────
+
+function UserLocationMarker() {
+  const map = useMap();
+  const [position, setPosition] = useState<[number, number] | null>(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => setPosition([pos.coords.latitude, pos.coords.longitude]),
+      (err) => console.warn("Geolocation error:", err),
+      { enableHighAccuracy: true },
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [map]);
+
+  if (!position) return null;
+
+  return (
+    <CircleMarker
+      center={position}
+      radius={8}
+      pathOptions={{
+        color: "white",
+        fillColor: "#3b82f6",
+        fillOpacity: 1,
+        weight: 2,
+      }}
+    />
+  );
+}
 
 function LocateMeButton() {
   const map = useMap();
@@ -169,6 +202,8 @@ export function DealMap({
         <MapFlyTo deals={deals} selectedId={selectedId} />
 
         <LocateMeButton />
+
+        <UserLocationMarker />
 
         {mappable.map((deal) => (
           <Marker
