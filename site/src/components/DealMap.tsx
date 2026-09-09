@@ -85,6 +85,34 @@ function MapFlyTo({
   return null;
 }
 
+// ── Locate me button ──────────────────────────────────────────────────────────
+
+function LocateMeButton() {
+  const map = useMap();
+
+  const handleLocate = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        map.flyTo([pos.coords.latitude, pos.coords.longitude], 15, {
+          duration: 1,
+        });
+      },
+      (err) => console.warn("Geolocation error:", err),
+    );
+  };
+
+  return (
+    <button
+      onClick={handleLocate}
+      title="Go to my location"
+      className="absolute bottom-4 right-4 z-[1000] flex size-9 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-accent"
+    >
+      <Navigation className="size-4 text-foreground" />
+    </button>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 type Props = {
@@ -139,6 +167,8 @@ export function DealMap({
         />
 
         <MapFlyTo deals={deals} selectedId={selectedId} />
+
+        <LocateMeButton />
 
         {mappable.map((deal) => (
           <Marker
