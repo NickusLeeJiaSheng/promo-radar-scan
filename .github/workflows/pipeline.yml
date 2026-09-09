@@ -91,6 +91,6 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add crawler/last_scraped.json
+          git add crawler/last_scraped.json 2>/dev/null || true
           git diff --cached --quiet || git commit -m "chore: update last_scraped.json [skip ci]"
-          git push
+          git push || true
