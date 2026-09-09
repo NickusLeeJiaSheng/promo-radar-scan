@@ -28,11 +28,11 @@ config({ path: resolve(__dirname, "..", ".env") });
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const DATABASE_URL    = process.env.DATABASE_URL;
-const SUPABASE_URL    = process.env.SUPABASE_URL;
-const SUPABASE_KEY    = process.env.SUPABASE_SERVICE_KEY;
+const DATABASE_URL = process.env.DATABASE_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET ?? "deal-images";
-const ALLOWED_ORIGIN  = process.env.ALLOWED_ORIGIN ?? "*";
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? "*";
 
 const SIGNED_URL_EXPIRY = 60 * 60; // 1 hour
 

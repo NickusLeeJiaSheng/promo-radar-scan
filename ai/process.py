@@ -45,7 +45,11 @@ OPENROUTER_URL  = "https://openrouter.ai/api/v1/chat/completions"
 # System prompt — instructs the model to return a strict JSON object
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT_TEMPLATE = """You are a deal extraction assistant. Today's date is {today}. Given a Telegram promotion message, extract the deal fields and return ONLY a valid JSON object with exactly these keys:
+SYSTEM_PROMPT_TEMPLATE = """You are a deal extraction assistant.
+- Today's date (pipeline run date): {today}
+- Message posted date: {posted_date}
+
+Given a Telegram promotion message, extract the deal fields and return ONLY a valid JSON object with exactly these keys:
 
 {{
   "merchant": string,
@@ -64,18 +68,25 @@ SYSTEM_PROMPT_TEMPLATE = """You are a deal extraction assistant. Today's date is
   "more_info": string | null  // URL or link
 }}
 
+Date inference rules:
+- Use today's date ({today}) to infer the year when a date like "30 Sep" is given without a year.
+- When the message uses relative terms like "today", "tonight", "this weekend", or "expires today",
+  resolve them against the MESSAGE POSTED DATE ({posted_date}), NOT today's pipeline run date.
+  For example, if the message was posted on 2026-09-05 and says "valid today only",
+  set valid_from and valid_to to 2026-09-05.
+
 Return ONLY the JSON object. No explanation, no markdown, no code fences."""
 
 
-def get_system_prompt() -> str:
+def get_system_prompt(posted_date: str) -> str:
     today = date.today().strftime("%Y-%m-%d")
-    return SYSTEM_PROMPT_TEMPLATE.format(today=today)
+    return SYSTEM_PROMPT_TEMPLATE.format(today=today, posted_date=posted_date)
 
 # ---------------------------------------------------------------------------
 # OpenRouter call
 # ---------------------------------------------------------------------------
 
-def call_openrouter(text: str, model: str, retries: int = 3) -> dict | None:
+def call_openrouter(text: str, model: str, posted_date: str, retries: int = 3) -> dict | None:
     """Send a message to OpenRouter and return the parsed JSON prediction."""
     headers = {
         "Authorization": f"Bearer {OPENROUTER_KEY}",
@@ -86,7 +97,7 @@ def call_openrouter(text: str, model: str, retries: int = 3) -> dict | None:
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": get_system_prompt()},
+            {"role": "system", "content": get_system_prompt(posted_date)},
             {"role": "user",   "content": text},
         ],
         "temperature": 0.1,  # low temp for consistent structured output
@@ -267,7 +278,8 @@ def main():
     for i, row in enumerate(rows, 1):
         print(f"[{i}/{len(rows)}] {row['channel']} #{row['message_id']} — ", end="", flush=True)
 
-        pred = call_openrouter(row["text"], args.model)
+        msg_posted_date = str(row["posted_at"])[:10]  # YYYY-MM-DD from the timestamp
+        pred = call_openrouter(row["text"], args.model, posted_date=msg_posted_date)
 
         if pred is None:
             print("✗ model call failed, skipping")
