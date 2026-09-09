@@ -56,6 +56,7 @@ function dealsApiPlugin() {
 export default defineConfig({
   // Load .env from the repo root (one level up from site/)
   envDir: path.resolve(__dirname, ".."),
+  base: "/promo-radar-scan/",
   plugins: [
     TanStackRouterVite({ autoCodeSplitting: true }),
     react(),
