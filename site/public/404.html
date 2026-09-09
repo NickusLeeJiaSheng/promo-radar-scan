@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>DealHub</title>
+    <script>
+      // GitHub Pages SPA redirect trick.
+      // When GH Pages serves this 404.html, we encode the intended path into
+      // the query string and redirect to the root so index.html can restore it.
+      (function () {
+        var segmentCount = 1; // number of path segments in the repo base path
+        var l = window.location;
+        var path = l.pathname
+          .slice(1)
+          .split("/")
+          .slice(segmentCount)
+          .join("/");
+        var search = l.search ? l.search.slice(1) + "&" : "";
+        var hash = l.hash;
+        l.replace(
+          l.protocol +
+            "//" +
+            l.hostname +
+            (l.port ? ":" + l.port : "") +
+            l.pathname
+              .split("/")
+              .slice(0, 1 + segmentCount)
+              .join("/") +
+            "/?p=/" +
+            encodeURIComponent(path) +
+            (search ? "&" + search : "") +
+            hash
+        );
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>
