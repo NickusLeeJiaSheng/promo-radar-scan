@@ -33,6 +33,10 @@ on:
         description: "Skip OneMap brand location fill step"
         type: boolean
         default: false
+      skip_cleanup:
+        description: "Skip expired deals cleanup step"
+        type: boolean
+        default: false
 
 concurrency:
   group: pipeline
@@ -84,6 +88,7 @@ jobs:
           if [ "${{ inputs.skip_process }}"         = "true" ]; then ARGS="$ARGS --skip-process";         fi
           if [ "${{ inputs.skip_geocode }}"         = "true" ]; then ARGS="$ARGS --skip-geocode";         fi
           if [ "${{ inputs.skip_brand_locations }}" = "true" ]; then ARGS="$ARGS --skip-brand-locations"; fi
+          if [ "${{ inputs.skip_cleanup }}"         = "true" ]; then ARGS="$ARGS --skip-cleanup";         fi
           python pipeline.py $ARGS
 
       - name: Save last_scraped.json

@@ -28,6 +28,7 @@ CRAWLER         = HERE / "crawler" / "main.py"
 PROCESS         = HERE / "ai"      / "process.py"
 GEOCODE         = HERE / "crawler" / "geocode.py"
 BRAND_LOCATIONS = HERE / "crawler" / "brand_locations.py"
+CLEANUP         = HERE / "crawler" / "cleanup.py"
 
 
 def run(label: str, cmd: list[str]) -> bool:
@@ -49,6 +50,7 @@ def main():
     parser.add_argument("--skip-process",          action="store_true", help="Skip the OpenRouter processing step")
     parser.add_argument("--skip-geocode",          action="store_true", help="Skip the geocoding step")
     parser.add_argument("--skip-brand-locations",  action="store_true", help="Skip the OneMap brand location fill step")
+    parser.add_argument("--skip-cleanup",          action="store_true", help="Skip the expired deals cleanup step")
     parser.add_argument("--model",  default=None, help="Override OpenRouter model for process.py")
     parser.add_argument("--limit",  type=int, default=None, help="Limit messages processed by process.py")
     parser.add_argument("--reprocess", action="store_true", help="Re-process already-processed messages")
@@ -106,6 +108,16 @@ def main():
             steps_run += 1
     else:
         print("Skipping brand locations step.")
+
+    # ── Step 5: Remove expired deals ──────────────────────────────────────────
+    if not args.skip_cleanup:
+        ok = run("Remove expired deals", [sys.executable, str(CLEANUP)])
+        if not ok:
+            steps_failed += 1
+        else:
+            steps_run += 1
+    else:
+        print("Skipping cleanup step.")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     print(f"\n{'='*60}")
