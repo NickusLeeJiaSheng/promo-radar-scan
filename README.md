@@ -7,7 +7,7 @@ An automated pipeline that scrapes Singapore deal and promotion posts from Teleg
 ## Features
 
 - Scrapes messages and images from Telegram channels on an incremental schedule
-- Uses an LLM (via OpenRouter) to parse unstructured promo text into structured fields — merchant, category, price, discount, validity dates, promo codes, outlet locations
+- Uses an LLM (via OpenRouter) to parse unstructured promo text into structured fields - merchant, category, price, discount, validity dates, promo codes, outlet locations
 - Geocodes outlet locations via Nominatim (OpenStreetMap)
 - Fills missing outlet locations by searching OneMap with the merchant name
 - Stores raw messages and enriched deals in a Neon (serverless PostgreSQL) database

@@ -13,8 +13,8 @@
 name: "🔄 Data Pipeline"
 
 on:
-  # schedule:                          # ← temporarily disabled
-  #   - cron: "0 2 * * *"             # daily 02:00 UTC = 10:00 SGT
+  schedule:
+    - cron: "0 2 * * *"               # daily 02:00 UTC = 10:00 SGT
   workflow_dispatch:
     inputs:
       skip_scrape:
@@ -27,6 +27,10 @@ on:
         default: false
       skip_geocode:
         description: "Skip geocoding step"
+        type: boolean
+        default: false
+      skip_brand_locations:
+        description: "Skip OneMap brand location fill step"
         type: boolean
         default: false
 
@@ -74,7 +78,8 @@ jobs:
       - name: Run pipeline.py
         run: |
           ARGS=""
-          if [ "${{ inputs.skip_scrape }}"  = "true" ]; then ARGS="$ARGS --skip-scrape";  fi
-          if [ "${{ inputs.skip_process }}" = "true" ]; then ARGS="$ARGS --skip-process"; fi
-          if [ "${{ inputs.skip_geocode }}" = "true" ]; then ARGS="$ARGS --skip-geocode"; fi
+          if [ "${{ inputs.skip_scrape }}"          = "true" ]; then ARGS="$ARGS --skip-scrape";          fi
+          if [ "${{ inputs.skip_process }}"         = "true" ]; then ARGS="$ARGS --skip-process";         fi
+          if [ "${{ inputs.skip_geocode }}"         = "true" ]; then ARGS="$ARGS --skip-geocode";         fi
+          if [ "${{ inputs.skip_brand_locations }}" = "true" ]; then ARGS="$ARGS --skip-brand-locations"; fi
           python pipeline.py $ARGS
