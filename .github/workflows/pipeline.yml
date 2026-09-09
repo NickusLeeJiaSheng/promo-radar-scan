@@ -43,6 +43,8 @@ jobs:
     name: "Run pipeline.py"
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -83,3 +85,12 @@ jobs:
           if [ "${{ inputs.skip_geocode }}"         = "true" ]; then ARGS="$ARGS --skip-geocode";         fi
           if [ "${{ inputs.skip_brand_locations }}" = "true" ]; then ARGS="$ARGS --skip-brand-locations"; fi
           python pipeline.py $ARGS
+
+      - name: Save last_scraped.json
+        if: always()
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add crawler/last_scraped.json
+          git diff --cached --quiet || git commit -m "chore: update last_scraped.json [skip ci]"
+          git push
