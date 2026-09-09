@@ -3,9 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+    <link rel="icon" href="/promo-radar-scan/favicon.ico" type="image/x-icon" />
     <title>DealHub — Deal discovery for Singapore</title>
     <meta name="description" content="Promotions from Telegram channels, cleaned up into searchable, location-aware deal cards." />
+    <script>
+      // Handle GitHub Pages SPA redirect from 404.html
+      (function () {
+        const query = window.location.search;
+        if (query.startsWith("?p=")) {
+          const path = decodeURIComponent(query.slice(3));
+          window.history.replaceState(null, "", "/promo-radar-scan" + path || "/promo-radar-scan/");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
