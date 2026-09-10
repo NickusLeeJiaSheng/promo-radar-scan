@@ -58,7 +58,7 @@ data_pipeline:
 
   rules:
     # Only run on scheduled pipelines or manual web/API triggers
-    # - if: '$CI_PIPELINE_SOURCE == "schedule"'   # ← temporarily disabled
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "api"'
 

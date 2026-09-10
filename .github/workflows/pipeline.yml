@@ -1,20 +1,27 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# pipeline.yml — Data Pipeline (schedule only)
+# pipeline.yml — Run the promo-radar data pipeline
 #
 # Triggers:
-#   • Daily cron at 02:00 UTC (10:00 SGT)
-#   • Manual trigger (workflow_dispatch) with optional skip flags
+#   • Daily schedule at 10:00 AM SGT (02:00 UTC)
+#   • Manual trigger (workflow_dispatch) with optional flags
 #
-# Required Secrets: TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_SESSION,
-#                   DATABASE_URL, OPENROUTER_API_KEY, SUPABASE_URL,
-#                   SUPABASE_KEY, SUPABASE_SERVICE_KEY, SUPABASE_BUCKET
+# Required Secrets (Settings → Secrets and variables → Actions):
+#   TELEGRAM_API_ID       — Telegram app API ID
+#   TELEGRAM_API_HASH     — Telegram app API hash
+#   TELEGRAM_SESSION      — base64-encoded telegram_session.session file
+#   DATABASE_URL          — Neon PostgreSQL connection string
+#   OPENROUTER_API_KEY    — OpenRouter API key
+#   SUPABASE_URL          — Supabase project URL
+#   SUPABASE_KEY          — Supabase anon key
+#   SUPABASE_SERVICE_KEY  — Supabase service role key
+#   SUPABASE_BUCKET       — Supabase storage bucket name
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: "🔄 Data Pipeline"
 
 on:
   schedule:
-    - cron: "0 2 * * *"               # daily 02:00 UTC = 10:00 SGT
+    - cron: "0 2 * * *"   # 10:00 AM SGT (UTC+8) = 02:00 UTC daily
   workflow_dispatch:
     inputs:
       skip_scrape:
@@ -22,15 +29,11 @@ on:
         type: boolean
         default: false
       skip_process:
-        description: "Skip OpenRouter AI processing step"
+        description: "Skip AI processing step"
         type: boolean
         default: false
       skip_geocode:
         description: "Skip geocoding step"
-        type: boolean
-        default: false
-      skip_brand_locations:
-        description: "Skip OneMap brand location fill step"
         type: boolean
         default: false
       skip_cleanup:
@@ -38,31 +41,33 @@ on:
         type: boolean
         default: false
 
-concurrency:
-  group: pipeline
-  cancel-in-progress: false   # don't cancel a running scrape mid-way
-
 jobs:
-  run_pipeline:
-    name: "Run pipeline.py"
+  pipeline:
+    name: "🔄 Run Pipeline"
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: crawler/requirements.txt
 
-      - name: Install Python dependencies
-        run: pip install -r crawler/requirements.txt
+      - name: Install dependencies
+        run: pip install --quiet -r crawler/requirements.txt
+
+      - name: Restore last_scraped.json
+        uses: actions/cache/restore@v4
+        with:
+          path: crawler/last_scraped.json
+          key: last-scraped-${{ runner.os }}
+          restore-keys: |
+            last-scraped-
 
       - name: Write .env file
         run: |
@@ -77,25 +82,21 @@ jobs:
           SUPABASE_BUCKET=${{ secrets.SUPABASE_BUCKET }}
           EOF
 
-      - name: Restore Telegram session file
-        run: |
-          echo "${{ secrets.TELEGRAM_SESSION }}" | base64 --decode > crawler/telegram_session.session
+      - name: Decode Telegram session
+        run: echo "${{ secrets.TELEGRAM_SESSION }}" | base64 --decode > crawler/telegram_session.session
 
-      - name: Run pipeline.py
+      - name: Run pipeline
         run: |
           ARGS=""
-          if [ "${{ inputs.skip_scrape }}"          = "true" ]; then ARGS="$ARGS --skip-scrape";          fi
-          if [ "${{ inputs.skip_process }}"         = "true" ]; then ARGS="$ARGS --skip-process";         fi
-          if [ "${{ inputs.skip_geocode }}"         = "true" ]; then ARGS="$ARGS --skip-geocode";         fi
-          if [ "${{ inputs.skip_brand_locations }}" = "true" ]; then ARGS="$ARGS --skip-brand-locations"; fi
-          if [ "${{ inputs.skip_cleanup }}"         = "true" ]; then ARGS="$ARGS --skip-cleanup";         fi
+          [ "${{ inputs.skip_scrape }}"  = "true" ] && ARGS="$ARGS --skip-scrape"
+          [ "${{ inputs.skip_process }}" = "true" ] && ARGS="$ARGS --skip-process"
+          [ "${{ inputs.skip_geocode }}" = "true" ] && ARGS="$ARGS --skip-geocode"
+          [ "${{ inputs.skip_cleanup }}" = "true" ] && ARGS="$ARGS --skip-cleanup"
           python pipeline.py $ARGS
 
       - name: Save last_scraped.json
         if: always()
-        run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add crawler/last_scraped.json 2>/dev/null || true
-          git diff --cached --quiet || git commit -m "chore: update last_scraped.json [skip ci]"
-          git push || true
+        uses: actions/cache/save@v4
+        with:
+          path: crawler/last_scraped.json
+          key: last-scraped-${{ runner.os }}-${{ github.run_id }}
