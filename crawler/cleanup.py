@@ -61,8 +61,7 @@ WHERE valid_to IS NOT NULL
 FETCH_ORPHAN_MESSAGES_SQL = """
 SELECT rm.id, rm.channel, rm.message_id, rm.posted_at::date AS posted_date
 FROM raw_messages rm
-WHERE rm.processed = TRUE
-  AND NOT EXISTS (
+WHERE NOT EXISTS (
       SELECT 1
       FROM deals d
       WHERE d.channel    = rm.channel
@@ -73,8 +72,7 @@ ORDER BY rm.posted_at DESC;
 
 DELETE_ORPHAN_MESSAGES_SQL = """
 DELETE FROM raw_messages
-WHERE processed = TRUE
-  AND NOT EXISTS (
+WHERE NOT EXISTS (
       SELECT 1
       FROM deals d
       WHERE d.channel    = raw_messages.channel
