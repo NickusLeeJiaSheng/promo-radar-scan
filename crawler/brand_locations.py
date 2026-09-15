@@ -3,6 +3,9 @@ brand_locations.py
 Finds deals whose locations list is empty or null, searches OneMap for the
 merchant name to discover outlet coordinates, then updates the deals table.
 
+For merchants OneMap can't find, falls back to asking an LLM (via OpenRouter)
+to enumerate Singapore outlet locations, then geocodes those via Nominatim.
+
 A `brand_outlets` cache table is used so each merchant is only looked up once.
 
 Run after geocode.py (or as step 4 of the pipeline):
@@ -17,6 +20,7 @@ OneMap Search API:
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -24,10 +28,17 @@ from pathlib import Path
 import psycopg2
 import psycopg2.extras
 import requests
+from dotenv import load_dotenv
 
 HERE = Path(__file__).parent
+load_dotenv(HERE.parent / ".env")
+
 sys.path.insert(0, str(HERE.parent / "db"))
 from db import get_connection, create_tables  # noqa: E402
+
+OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_MODEL  = "openrouter/free"
 
 # ---------------------------------------------------------------------------
 # OneMap Search API
@@ -36,13 +47,107 @@ from db import get_connection, create_tables  # noqa: E402
 ONEMAP_URL    = "https://www.onemap.gov.sg/api/common/elastic/search"
 REQUEST_DELAY = 0.25  # 250 req/min → 0.25 s between calls
 
+# ---------------------------------------------------------------------------
+# Nominatim geocoder (for AI-suggested outlet names)
+# ---------------------------------------------------------------------------
+
+NOMINATIM_URL     = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_HEADERS = {"User-Agent": "promo-radar-scan/1.0 (brand-locations)"}
+NOMINATIM_DELAY   = 1.1
+
 SG_BOUNDS = dict(lat_min=1.1, lat_max=1.5, lng_min=103.5, lng_max=104.2)
+
 
 def _in_singapore(lat: float, lng: float) -> bool:
     return (
         SG_BOUNDS["lat_min"] < lat < SG_BOUNDS["lat_max"]
         and SG_BOUNDS["lng_min"] < lng < SG_BOUNDS["lng_max"]
     )
+
+
+def geocode_nominatim(address: str) -> tuple[float, float] | None:
+    try:
+        r = requests.get(
+            NOMINATIM_URL,
+            params={"q": f"{address}, Singapore", "format": "json",
+                    "limit": 1, "countrycodes": "sg"},
+            headers=NOMINATIM_HEADERS,
+            timeout=10,
+        )
+        r.raise_for_status()
+        results = r.json()
+        if results:
+            lat, lng = float(results[0]["lat"]), float(results[0]["lon"])
+            if _in_singapore(lat, lng):
+                return lat, lng
+    except Exception as e:
+        print(f"    Nominatim error for '{address}': {e}")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# AI fallback — ask LLM to list Singapore outlets for a brand
+# ---------------------------------------------------------------------------
+
+AI_SYSTEM_PROMPT = """You are a Singapore retail location assistant.
+Given a brand or merchant name, list its known outlet locations in Singapore.
+Return ONLY a JSON array of outlet name strings, e.g.:
+["Outlet Name at Mall A", "Outlet Name at Mall B"]
+If you don't know any outlets, return an empty array: []
+No explanation, no markdown, no code fences."""
+
+
+def ask_ai_for_outlets(merchant: str) -> list[str]:
+    """Ask OpenRouter LLM to list Singapore outlets for a merchant. Returns list of name strings."""
+    if not OPENROUTER_KEY:
+        return []
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_KEY}",
+        "Content-Type":  "application/json",
+        "HTTP-Referer":  "https://github.com/promo-radar-scan",
+        "X-Title":       "promo-radar-scan",
+    }
+    payload = {
+        "model": DEFAULT_MODEL,
+        "messages": [
+            {"role": "system", "content": AI_SYSTEM_PROMPT},
+            {"role": "user",   "content": f"List Singapore outlet locations for: {merchant}"},
+        ],
+        "temperature": 0.1,
+    }
+    try:
+        resp = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=30)
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"].strip()
+        if content.startswith("```"):
+            content = content.split("```")[1]
+            if content.startswith("json"):
+                content = content[4:]
+            content = content.strip()
+        names = json.loads(content)
+        if isinstance(names, list):
+            return [str(n) for n in names if n]
+    except Exception as e:
+        print(f"    AI error for '{merchant}': {e}")
+    return []
+
+
+def ai_outlets_to_coords(merchant: str) -> list[dict]:
+    """Use AI to get outlet names, then geocode each via Nominatim."""
+    names = ask_ai_for_outlets(merchant)
+    if not names:
+        return []
+
+    outlets = []
+    for name in names[:10]:  # cap at 10 outlets per brand
+        coords = geocode_nominatim(f"{merchant} {name}")
+        if not coords:
+            coords = geocode_nominatim(name)
+        if coords:
+            outlets.append({"name": name, "lat": coords[0], "lng": coords[1]})
+        time.sleep(NOMINATIM_DELAY)
+
+    return outlets
 
 
 def search_onemap(query: str, max_results: int = 10) -> list[dict]:
@@ -197,14 +302,21 @@ def main():
     print(f"{len(brand_cache)} merchants already cached, "
           f"{len(merchants_needed)} new merchants to query.\n")
 
-    # ── Query OneMap for each new merchant ────────────────────────────────────
+    # ── Query OneMap for each new merchant, fall back to AI ──────────────────
     with conn.cursor() as cur:
         for i, merchant in enumerate(merchants_needed, 1):
-            print(f"[{i}/{len(merchants_needed)}] Searching '{merchant}' ...", end=" ", flush=True)
+            print(f"[{i}/{len(merchants_needed)}] Searching '{merchant}' on OneMap ...", end=" ", flush=True)
             outlets = search_onemap(merchant)
+
+            if outlets:
+                print(f"✓ {len(outlets)} outlets found")
+            else:
+                print("✗ not found — trying AI fallback ...", end=" ", flush=True)
+                outlets = ai_outlets_to_coords(merchant)
+                print(f"✓ {len(outlets)} outlets from AI" if outlets else "✗ AI found nothing")
+
             brand_cache[merchant] = outlets
             cur.execute(UPSERT_BRAND_OUTLETS_SQL, (merchant, json.dumps(outlets)))
-            print(f"✓ {len(outlets)} outlets found" if outlets else "✗ none found")
             time.sleep(REQUEST_DELAY)
 
     conn.commit()
