@@ -6,6 +6,8 @@ Runs the full deal pipeline in sequence:
     2. ai/process.py                — call OpenRouter on unprocessed rows → deals table
     3. crawler/geocode.py           — geocode locations in the deals table
     4. crawler/brand_locations.py   — fill missing locations via OneMap brand search
+    5. crawler/dedup.py             — merge near-duplicate deals across channels
+    6. crawler/cleanup.py           — remove expired deals
 
 Usage:
     python pipeline.py                          # run all steps
@@ -13,6 +15,8 @@ Usage:
     python pipeline.py --skip-process           # skip step 2
     python pipeline.py --skip-geocode           # skip step 3
     python pipeline.py --skip-brand-locations   # skip step 4
+    python pipeline.py --skip-dedup             # skip step 5
+    python pipeline.py --skip-cleanup           # skip step 6
     python pipeline.py --model google/gemini-2.0-flash-exp:free
     python pipeline.py --limit 50               # only process 50 raw messages
 """
@@ -28,6 +32,7 @@ CRAWLER         = HERE / "crawler" / "main.py"
 PROCESS         = HERE / "ai"      / "process.py"
 GEOCODE         = HERE / "crawler" / "geocode.py"
 BRAND_LOCATIONS = HERE / "crawler" / "brand_locations.py"
+DEDUP           = HERE / "crawler" / "dedup.py"
 CLEANUP         = HERE / "crawler" / "cleanup.py"
 
 
@@ -50,6 +55,7 @@ def main():
     parser.add_argument("--skip-process",          action="store_true", help="Skip the OpenRouter processing step")
     parser.add_argument("--skip-geocode",          action="store_true", help="Skip the geocoding step")
     parser.add_argument("--skip-brand-locations",  action="store_true", help="Skip the OneMap brand location fill step")
+    parser.add_argument("--skip-dedup",            action="store_true", help="Skip the deal deduplication step")
     parser.add_argument("--skip-cleanup",          action="store_true", help="Skip the expired deals cleanup step")
     parser.add_argument("--model",  default=None, help="Override OpenRouter model for process.py")
     parser.add_argument("--limit",  type=int, default=None, help="Limit messages processed by process.py")
@@ -109,7 +115,17 @@ def main():
     else:
         print("Skipping brand locations step.")
 
-    # ── Step 5: Remove expired deals ──────────────────────────────────────────
+    # ── Step 5: Deduplicate deals ─────────────────────────────────────────────
+    if not args.skip_dedup:
+        ok = run("Deduplicate deals", [sys.executable, str(DEDUP)])
+        if not ok:
+            steps_failed += 1
+        else:
+            steps_run += 1
+    else:
+        print("Skipping dedup step.")
+
+    # ── Step 6: Remove expired deals ──────────────────────────────────────────
     if not args.skip_cleanup:
         ok = run("Remove expired deals", [sys.executable, str(CLEANUP)])
         if not ok:

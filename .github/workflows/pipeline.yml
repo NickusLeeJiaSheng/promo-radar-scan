@@ -36,6 +36,10 @@ on:
         description: "Skip geocoding step"
         type: boolean
         default: false
+      skip_dedup:
+        description: "Skip deal deduplication step"
+        type: boolean
+        default: false
       skip_cleanup:
         description: "Skip expired deals cleanup step"
         type: boolean
@@ -91,6 +95,7 @@ jobs:
           [ "${{ inputs.skip_scrape }}"  = "true" ] && ARGS="$ARGS --skip-scrape"
           [ "${{ inputs.skip_process }}" = "true" ] && ARGS="$ARGS --skip-process"
           [ "${{ inputs.skip_geocode }}" = "true" ] && ARGS="$ARGS --skip-geocode"
+          [ "${{ inputs.skip_dedup }}"   = "true" ] && ARGS="$ARGS --skip-dedup"
           [ "${{ inputs.skip_cleanup }}" = "true" ] && ARGS="$ARGS --skip-cleanup"
           python pipeline.py $ARGS
 
