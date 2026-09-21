@@ -1,22 +1,25 @@
 """
 cleanup.py
-Removes expired deals from the deals table and orphaned raw_messages.
+Removes expired deals from the deals table, orphaned raw_messages,
+and their associated images from Supabase Storage.
 
 Phase 1 — Deals:
   A deal is considered expired when its valid_to date is strictly before today's
   date (SGT / local server time). Deals with a NULL valid_to are kept — they are
   assumed to be ongoing.
 
-Phase 2 — raw_messages:
-  A message is considered expired when its message_id and channel are no longer
-  in the deals table.
+Phase 2 — raw_messages + Supabase images:
+  A message is considered orphaned when its (channel, message_id) pair is no
+  longer referenced by any row in deals. The associated image in Supabase
+  Storage is also deleted.
 
 Usage:
-    python cleanup.py            # delete expired deals + orphaned raw_messages
-    python cleanup.py --dry-run  # print what would be deleted without touching the DB
+    python cleanup.py            # delete expired deals + orphaned raw_messages + images
+    python cleanup.py --dry-run  # print what would be deleted without touching anything
 """
 
 import argparse
+import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -28,6 +31,10 @@ load_dotenv(HERE.parent / ".env")
 
 sys.path.insert(0, str(HERE.parent / "db"))
 from db import get_connection  # noqa: E402
+
+SUPABASE_URL        = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_BUCKET     = os.getenv("SUPABASE_BUCKET", "deal-images")
 
 # ---------------------------------------------------------------------------
 # SQL
@@ -59,7 +66,7 @@ WHERE valid_to IS NOT NULL
 # never deleted before the pipeline has a chance to run.
 
 FETCH_ORPHAN_MESSAGES_SQL = """
-SELECT rm.id, rm.channel, rm.message_id, rm.posted_at::date AS posted_date
+SELECT rm.id, rm.channel, rm.message_id, rm.posted_at::date AS posted_date, rm.image_url
 FROM raw_messages rm
 WHERE NOT EXISTS (
       SELECT 1
@@ -79,6 +86,38 @@ WHERE NOT EXISTS (
         AND d.message_id = raw_messages.message_id
   );
 """
+
+# ---------------------------------------------------------------------------
+# Supabase Storage helpers
+# ---------------------------------------------------------------------------
+
+def get_supabase():
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return None
+    try:
+        from supabase import create_client
+        return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    except Exception as e:
+        print(f"  Warning: could not init Supabase client: {e}")
+        return None
+
+
+def delete_supabase_images(image_paths: list[str]) -> int:
+    """Delete a list of storage object paths from Supabase. Returns count deleted."""
+    paths = [p for p in image_paths if p]
+    if not paths:
+        return 0
+    supabase = get_supabase()
+    if not supabase:
+        print("  Warning: Supabase not configured — skipping image deletion.")
+        return 0
+    try:
+        supabase.storage.from_(SUPABASE_BUCKET).remove(paths)
+        return len(paths)
+    except Exception as e:
+        print(f"  Warning: Supabase image deletion failed: {e}")
+        return 0
+
 
 # ---------------------------------------------------------------------------
 # Main
@@ -124,8 +163,8 @@ def main():
     else:
         print(f"Found {len(orphan_rows)} orphaned raw_message(s):")
         for row in orphan_rows:
-            msg_id, channel, message_id, posted_date = row
-            print(f"  [raw#{msg_id}] channel={channel} message_id={message_id} posted={posted_date}")
+            msg_id, channel, message_id, posted_date, image_url = row
+            print(f"  [raw#{msg_id}] channel={channel} message_id={message_id} posted={posted_date} image={'yes' if image_url else 'no'}")
 
     # ── Apply or dry-run ─────────────────────────────────────────────────────
     if args.dry_run:
@@ -147,6 +186,12 @@ def main():
 
     conn.commit()
     conn.close()
+
+    # ── Delete orphaned images from Supabase ──────────────────────────────────
+    print("\n── Phase 3: Supabase image cleanup ──")
+    image_paths = [row[4] for row in orphan_rows if row[4]]
+    deleted_images = delete_supabase_images(image_paths)
+    print(f"✓ Deleted {deleted_images} image(s) from Supabase Storage.")
 
     print(f"\n✓ Deleted {deleted_deals} expired deal(s).")
     print(f"✓ Deleted {deleted_messages} orphaned raw_message(s).")
