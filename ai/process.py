@@ -117,7 +117,11 @@ def call_openrouter(text: str, model: str, posted_date: str, retries: int = 3) -
                     content = content[4:]
                 content = content.strip()
 
-            return json.loads(content)
+            parsed = json.loads(content)
+            # Handle model returning a list instead of a dict e.g. [{...}]
+            if isinstance(parsed, list):
+                parsed = parsed[0] if parsed else None
+            return parsed
 
         except json.JSONDecodeError as e:
             print(f"    JSON parse error (attempt {attempt}): {e}")
