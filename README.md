@@ -9,97 +9,37 @@
 ## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        TELEGRAM CHANNELS                            │
-│                  @goodlobang  @sgfooddeals  ...                     │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │  Raw message text + images
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 1 — SCRAPE  (crawler/main.py)                                 │
-│                                                                     │
-│  • Telethon reads messages since last_scraped.json timestamp        │
-│  • Downloads attached images → uploads to Supabase Storage          │
-│  • Saves raw text + image path to raw_messages table (Neon DB)      │
-│  • Updates last_scraped.json so next run is incremental             │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │  Unprocessed rows in raw_messages
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 2 — AI EXTRACTION  (ai/process.py)                            │
-│                                                                     │
-│  • Sends each unprocessed message to OpenRouter LLM                 │
-│  • System prompt instructs model to return strict JSON:             │
-│      merchant, category, offer, price, discount,                    │
-│      valid_from, valid_to, locations, promo_code, ...               │
-│  • Parsed result upserted into deals table                          │
-│  • Skips non-deals (roundups, announcements)                        │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │  Deals with location names (no coords yet)
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 3 — GEOCODE  (crawler/geocode.py)                             │
-│                                                                     │
-│  • For each outlet name extracted by AI, queries Nominatim (OSM)    │
-│  • Validates coords are within Singapore bounding box               │
-│  • Local in-memory cache avoids duplicate API calls per run         │
-│  • Hardcoded fallback table for venues Nominatim can't find         │
-│  • Writes lat/lng back into deals.locations JSONB column            │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │  Deals still missing coordinates
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 4 — BRAND LOOKUP  (crawler/brand_locations.py)                │
-│                                                                     │
-│  • Finds deals where all locations still have null lat/lng          │
-│  • Searches OneMap API (SG govt) by merchant name                   │
-│  • If OneMap returns nothing → asks LLM to list known SG outlets    │
-│    → geocodes each via Nominatim                                     │
-│  • Results cached in brand_outlets table (never re-queried)         │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │  All deals enriched
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 5 — DEDUP  (crawler/dedup.py)                                 │
-│                                                                     │
-│  • Groups deals by (valid_from, valid_to)                           │
-│  • Computes Jaccard token similarity on merchant + offer text       │
-│  • Deals with >80% similarity treated as cross-channel duplicates   │
-│  • Earliest-posted deal kept, duplicate deleted                     │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  STEP 6 — CLEANUP  (crawler/cleanup.py)                             │
-│                                                                     │
-│  • Deletes deals where valid_to < today                             │
-│  • Deletes orphaned raw_messages no longer linked to any deal       │
-│  • Deletes corresponding images from Supabase Storage               │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │  Clean, enriched deals in Neon DB
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  API  (functions/index.js — Google Cloud Run)                       │
-│                                                                     │
-│  GET /deals                                                         │
-│  • Queries deals JOIN raw_messages from Neon DB                     │
-│  • Generates Supabase signed URLs for each deal image (1hr expiry)  │
-│  • Returns JSON array with CORS headers + 5min CDN cache            │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │  JSON deals array
-                             ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│  FRONTEND  (site/ — React 19 + Vite + TanStack Router)              │
-│                                                                     │
-│  • Fetches deals from Cloud Run on load (5min stale-while-revalidate│
-│  • Interactive Leaflet map with category-coloured markers           │
-│  • Blue dot shows user's current GPS location                       │
-│  • Locate-me button flies map back to user position                 │
-│  • Category filter, search, saved deals (localStorage)             │
-│  • Deal detail page with full info, image, location map             │
-│                                                                     │
-│  Deployed to GitHub Pages via GitHub Actions on every push to main  │
-└─────────────────────────────────────────────────────────────────────┘
+  ┌─────────────────┐              ┌──────────────────────────────────┐
+  │ Telegram Channel│─── scrape ──►│  raw_messages table  (Neon DB)   │
+  │ @goodlobang     │              └────────────────┬─────────────────┘
+  │ @sgfooddeals    │                               │ unprocessed rows
+  └─────────────────┘                               ▼
+                                   ┌──────────────────────────────────┐
+  ┌─────────────────┐              │  OpenRouter LLM  (ai/process.py) │
+  │ Supabase Storage│◄─ upload ────│  extract: merchant, price,       │
+  │ (deal images)   │              │  discount, dates, locations...   │
+  └────────┬────────┘              └────────────────┬─────────────────┘
+           │ signed URLs                            │ structured deals
+           │                                        ▼
+           │                       ┌──────────────────────────────────┐
+           │                       │  deals table  (Neon DB)          │
+           │                       │  geocode.py → lat/lng per outlet │
+           │                       │  brand_locations.py → OneMap/AI  │
+           │                       │  dedup.py → remove duplicates    │
+           │                       │  cleanup.py → remove expired     │
+           │                       └────────────────┬─────────────────┘
+           │                                        │
+           │                                        ▼
+           │                       ┌──────────────────────────────────┐
+           └──────────────────────►│  Google Cloud Run  (GET /deals)  │
+                                   │  queries DB + signs image URLs   │
+                                   └────────────────┬─────────────────┘
+                                                    │ JSON
+                                                    ▼
+                                   ┌──────────────────────────────────┐
+                                   │  React Frontend  (GitHub Pages)  │
+                                   │  map · filter · saved deals      │
+                                   └──────────────────────────────────┘
 ```
 
 ---
