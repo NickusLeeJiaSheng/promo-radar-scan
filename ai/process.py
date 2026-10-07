@@ -74,6 +74,8 @@ Date inference rules:
   resolve them against the MESSAGE POSTED DATE ({posted_date}), NOT today's pipeline run date.
   For example, if the message was posted on 2026-09-05 and says "valid today only",
   set valid_from and valid_to to 2026-09-05.
+- When the message mentions a date range like "4–13 Sep", use the LAST date as valid_to (e.g. 2026-09-13).
+- When multiple date ranges are mentioned, use the widest range — earliest start as valid_from, latest end as valid_to.
 
 Return ONLY the JSON object. No explanation, no markdown, no code fences."""
 
