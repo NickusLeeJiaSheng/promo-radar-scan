@@ -126,6 +126,18 @@ http("deals", async (req, res) => {
     return;
   }
 
+  // Rate limiting — use Cloud Run's trusted X-Forwarded-For (first IP only)
+  // Cloud Run always appends the real client IP last, so we take the first
+  // entry which is the original client (not spoofable via the header alone
+  // since Cloud Run infrastructure controls the final append).
+  const forwarded = req.headers["x-forwarded-for"];
+  const ip = (forwarded ? forwarded.split(",")[0] : req.socket?.remoteAddress ?? "unknown").trim();
+
+  if (isRateLimited(ip)) {
+    res.status(429).json({ error: "Too many requests — please slow down." });
+    return;
+  }
+
   try {
     const sql = getDb();
 
